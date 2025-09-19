@@ -50,9 +50,9 @@ def analyze_image():
         img.save(buffered, format=img.format)
         img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
 
-        # إرسال إلى OpenAI لتحليل فني مضبوط
+        # إرسال إلى OpenAI لتحليل فني مضبوط - استخدام النموذج الحالي
         response = client.chat.completions.create(
-            model="gpt-4-vision-preview",  # استخدام نموذج الرؤية المناسب
+            model="gpt-4o",  # استخدام النموذج الحالي الذي يدعم تحليل الصور
             messages=[
                 {
                     "role": "system",
@@ -94,12 +94,15 @@ def analyze_image():
                         },
                         {
                             "type": "image_url",
-                            "image_url": {"url": f"data:image/{img.format.lower()};base64,{img_str}"}
+                            "image_url": {
+                                "url": f"data:image/{img.format.lower()};base64,{img_str}",
+                                "detail": "high"  # إضافة مستوى التفاصيل للصورة
+                            }
                         }
                     ]
                 }
             ],
-            max_tokens=1000  # تحديد الحد الأقصى للرد
+            max_tokens=1500  # زيادة عدد الرموز للتحليل المفصل
         )
 
         # استخراج التحليل من الرد
@@ -114,5 +117,3 @@ def analyze_image():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
-
