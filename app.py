@@ -3,12 +3,12 @@ from flask import Flask, request, jsonify
 from PIL import Image
 from io import BytesIO
 import base64
-from openai import OpenAI
+import openai
 
 app = Flask(__name__)
 
-# OpenAI client
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+# OpenAI API Key
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # Limit upload size (optional, in bytes)
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB max
@@ -25,47 +25,63 @@ def analyze_image():
 
     file = request.files['file']
 
-    # Try to open the file as an image
     try:
         img = Image.open(file.stream)
-        # Optional: check format
         if img.format not in ['PNG', 'JPEG', 'JPG']:
             return jsonify({"error": "نوع الملف غير مدعوم. الرجاء إرسال PNG أو JPEG"}), 400
 
-        # Convert image to base64 so we can send it to OpenAI
-        file.stream.seek(0)
-        img_bytes = file.read()
-        img_b64 = base64.b64encode(img_bytes).decode("utf-8")
+        # Convert image to base64
+        buffered = BytesIO()
+        img.save(buffered, format=img.format)
+        img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
 
-        # Call OpenAI Vision model
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",  # Vision-capable model
+        # Send to OpenAI for technical chart analysis
+        response = openai.chat.completions.create(
+            model="gpt-4.1-mini",
             messages=[
-                {
-                    "role": "system",
-                    "content": "أنت خبير تحليل فني للأسواق المالية. عندما تستقبل صورة شارت، قم بتحليلها بناءً على النماذج الفنية، المؤشرات، الدعم والمقاومة، الاتجاه العام، واستراتيجية التداول المحتملة."
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "حلل هذا الشارت المرفق وأعطني تقرير مفصل:"},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}
-                    ]
-                }
-            ],
-            max_tokens=500
+                {"role": "system", "content": "انت محلل فني محترف متخصص في قراءة الشارتات (MT4, TradingView)."},
+                {"role": "user", "content": [
+                    {"type": "text", "text": """قم بتحليل هذا الشارت بنفس القالب التالي حصراً (ولا تخرج عنه):
+
+### الإطار الزمني
+...
+
+### النماذج الفنية
+...
+
+### المؤشرات الفنية
+...
+
+### مستويات الدعم والمقاومة
+...
+
+### الاتجاه العام
+...
+
+### استراتيجية التداول المحتملة
+...
+
+### ملاحظات عامة
+...
+
+⚠️ انتبه: يجب أن يكون التحليل مركز وعملي، ومطابق لأسلوب التحليل الفني المتعارف عليه، مثل المثال التالي:
+- RSI بقيمة 49.59 → السوق متوازن.
+- دعم عند 3368 ومقاومة عند 3388.
+- الاتجاه جانبي.
+- إستراتيجية محتملة: انتظار كسر الدعم أو المقاومة.
+
+ها هو الشارت للتحليل:"""},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_str}"}}
+                ]}
+            ]
         )
 
-        ai_analysis = response.choices[0].message["content"]
+        analysis = response.choices[0].message.content
 
-        return jsonify({
-            "message": "تم تحليل الصورة ✅",
-            "analysis": ai_analysis
-        }), 200
+        return jsonify({"message": "✅ تم تحليل الشارت بنجاح", "analysis": analysis}), 200
 
     except Exception as e:
-        return jsonify({"error": f"لم نتمكن من قراءة الصورة. التفاصيل: {str(e)}"}), 400
-
+        return jsonify({"error": f"خطأ أثناء معالجة الصورة: {str(e)}"}), 400
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
