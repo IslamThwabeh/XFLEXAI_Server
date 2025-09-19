@@ -3,14 +3,12 @@ import base64
 import re
 import requests
 from flask import Flask, request, jsonify
-from flask_cors import CORS
 from PIL import Image
 from io import BytesIO
 import time
 
 # تهيئة Flask
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all domains
 
 # تحديد حجم أقصى للرفع (5MB)
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
@@ -192,8 +190,8 @@ def sendpulse_analyze():
         
         if not data:
             return jsonify({
-                "error": "No data provided",
-                "message": "يرجى إرسال بيانات الصورة بشكل صحيح"
+                "message": "لم يتم إرسال بيانات الصورة",
+                "analysis": "فشل في التحليل: لم يتم إرسال بيانات الصورة"
             }), 400
         
         # Extract image URL from SendPulse data structure
@@ -205,8 +203,8 @@ def sendpulse_analyze():
         
         if not image_url:
             return jsonify({
-                "error": "No image URL provided",
-                "message": "لم يتم تقديم رابط الصورة"
+                "message": "لم يتم تقديم رابط الصورة",
+                "analysis": "فشل في التحليل: لم يتم تقديم رابط الصورة"
             }), 400
         
         # Download image from URL
@@ -214,8 +212,8 @@ def sendpulse_analyze():
             response = requests.get(image_url, timeout=10)
             if response.status_code != 200:
                 return jsonify({
-                    "error": "Failed to download image",
-                    "message": "تعذر تحميل الصورة من الرابط المقدم"
+                    "message": "تعذر تحميل الصورة من الرابط المقدم",
+                    "analysis": "فشل في التحليل: تعذر تحميل الصورة من الرابط المقدم"
                 }), 400
                 
             img = Image.open(BytesIO(response.content))
@@ -223,22 +221,21 @@ def sendpulse_analyze():
             # Check if it's a valid image
             if img.format not in ['PNG', 'JPEG', 'JPG']:
                 return jsonify({
-                    "error": "Unsupported file type",
-                    "message": "نوع الملف غير مدعوم. الرجاء إرسال PNG أو JPEG"
+                    "message": "نوع الملف غير مدعوم. الرجاء إرسال PNG أو JPEG",
+                    "analysis": "فشل في التحليل: نوع الملف غير مدعوم"
                 }), 400
                 
         except Exception as e:
             return jsonify({
-                "error": "Image download failed",
-                "message": f"فشل في تحميل الصورة: {str(e)}"
+                "message": f"فشل في تحميل الصورة: {str(e)}",
+                "analysis": f"فشل في التحليل: فشل في تحميل الصورة ({str(e)})"
             }), 400
         
         # إذا كان OpenAI غير متاح
         if not OPENAI_AVAILABLE:
             return jsonify({
-                "error": "خدمة التحليل غير متاحة حالياً",
                 "message": "✅ الصورة صالحة ولكن خدمة الذكاء الاصطناعي غير متوفرة",
-                "details": openai_error_message
+                "analysis": f"فشل في التحليل: خدمة الذكاء الاصطناعي غير متوفرة ({openai_error_message})"
             }), 503
         
         # Convert image to base64
@@ -253,31 +250,30 @@ def sendpulse_analyze():
         # Check if the analysis is valid
         if not is_valid_analysis(analysis):
             return jsonify({
-                "error": "فشل في تحليل الصورة",
                 "message": "لم يتمكن الذكاء الاصطناعي من تحليل الصورة بشكل صحيح",
-                "details": "قد تكون الصورة غير واضحة أو غير مناسبة للتحليل"
+                "analysis": "فشل في التحليل: لم يتمكن الذكاء الاصطناعي من تحليل الصورة بشكل صحيح"
             }), 400
             
         # Return analysis in SendPulse compatible format
         return jsonify({
-            "success": True,
             "message": "✅ تم تحليل الشارت بنجاح",
-            "analysis": analysis,
-            # SendPulse can use these fields to send messages
-            "bot_response": f"✅ تم تحليل الشارت بنجاح\n\n{analysis}"
+            "analysis": analysis
         }), 200
         
     except Exception as e:
         return jsonify({
-            "error": "خطأ أثناء معالجة الصورة",
-            "message": f"تفاصيل الخطأ: {str(e)}"
+            "message": f"خطأ أثناء معالجة الصورة: {str(e)}",
+            "analysis": f"فشل في التحليل: خطأ أثناء معالجة الصورة ({str(e)})"
         }), 400
 
 # Keep the original endpoint for direct file uploads
 @app.route('/analyze', methods=['POST'])
 def analyze_image():
     if 'file' not in request.files:
-        return jsonify({"error": "لم يتم إرسال صورة. الرجاء إرسال صورة واضحة"}), 400
+        return jsonify({
+            "message": "لم يتم إرسال صورة. الرجاء إرسال صورة واضحة",
+            "analysis": "فشل في التحليل: لم يتم إرسال صورة"
+        }), 400
 
     file = request.files['file']
 
@@ -285,7 +281,10 @@ def analyze_image():
         # التحقق من أن الملف صورة
         img = Image.open(file.stream)
         if img.format not in ['PNG', 'JPEG', 'JPG']:
-            return jsonify({"error": "نوع الملف غير مدعوم. الرجاء إرسال PNG أو JPEG"}), 400
+            return jsonify({
+                "message": "نوع الملف غير مدعوم. الرجاء إرسال PNG أو JPEG",
+                "analysis": "فشل في التحليل: نوع الملف غير مدعوم"
+            }), 400
 
         # Re-check OpenAI status if it's been a while
         if time.time() - openai_last_check > 300:
@@ -294,9 +293,8 @@ def analyze_image():
         # إذا كان OpenAI غير متاح
         if not OPENAI_AVAILABLE:
             return jsonify({
-                "error": "خدمة التحليل غير متاحة حالياً",
                 "message": "✅ الصورة صالحة ولكن خدمة الذكاء الاصطناعي غير متوفرة",
-                "details": openai_error_message
+                "analysis": f"فشل في التحليل: خدمة الذكاء الاصطناعي غير متوفرة ({openai_error_message})"
             }), 503
 
         # Convert image to base64
@@ -311,12 +309,14 @@ def analyze_image():
         # Check if the analysis is valid
         if not is_valid_analysis(analysis):
             return jsonify({
-                "error": "فشل في تحليل الصورة",
                 "message": "لم يتمكن الذكاء الاصطناعي من تحليل الصورة بشكل صحيح",
-                "details": "قد تكون الصورة غير واضحة أو غير مناسبة للتحليل"
+                "analysis": "فشل في التحليل: لم يتمكن الذكاء الاصطناعي من تحليل الصورة بشكل صحيح"
             }), 400
 
-        return jsonify({"message": "✅ تم تحليل الشارت بنجاح", "analysis": analysis}), 200
+        return jsonify({
+            "message": "✅ تم تحليل الشارت بنجاح",
+            "analysis": analysis
+        }), 200
 
     except Exception as e:
         error_msg = str(e)
@@ -325,24 +325,24 @@ def analyze_image():
         if "insufficient_quota" in error_msg:
             init_openai()
             return jsonify({
-                "error": "نفذ رصيد خدمة OpenAI",
-                "message": "حساب OpenAI لا يحتوي على رصيد كافي.",
+                "message": "حساب OpenAI لا يحتوي على رصيد كافي",
+                "analysis": "فشل في التحليل: حساب OpenAI لا يحتوي على رصيد كافي"
             }), 402
         elif "invalid_api_key" in error_msg:
             init_openai()
             return jsonify({
-                "error": "مفتاح API غير صالح",
-                "message": "مفتاح API الموجود في البيئة غير صالح أو منتهي الصلاحية."
+                "message": "مفتاح API الموجود في البيئة غير صالح أو منتهي الصلاحية",
+                "analysis": "فشل في التحليل: مفتاح API غير صالح"
             }), 401
         elif "rate_limit" in error_msg:
             return jsonify({
-                "error": "تم تجاوز الحد المسموح",
-                "message": "تم تجاوز الحد المسموح للطلبات. يرجى المحاولة مرة أخرى بعد بضع دقائق."
+                "message": "تم تجاوز الحد المسموح للطلبات. يرجى المحاولة مرة أخرى بعد بضع دقائق",
+                "analysis": "فشل في التحليل: تم تجاوز الحد المسموح للطلبات"
             }), 429
         else:
             return jsonify({
-                "error": "خطأ أثناء معالجة الصورة",
-                "message": f"تفاصيل الخطأ: {error_msg}"
+                "message": f"خطأ أثناء معالجة الصورة: {error_msg}",
+                "analysis": f"فشل في التحليل: خطأ أثناء معالجة الصورة ({error_msg})"
             }), 400
 
 @app.route('/status')
