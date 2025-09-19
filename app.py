@@ -1,13 +1,16 @@
 import os
 import base64
 import re
+import requests
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from PIL import Image
 from io import BytesIO
 import time
 
 # تهيئة Flask
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all domains
 
 # تحديد حجم أقصى للرفع (5MB)
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
@@ -66,36 +69,6 @@ def init_openai():
 # Initialize OpenAI on startup
 init_openai()
 
-@app.route('/')
-def home():
-    status = "✅" if OPENAI_AVAILABLE else "❌"
-    return f"XFLEXAI Server is running {status} - OpenAI: {'Available' if OPENAI_AVAILABLE else openai_error_message}"
-
-@app.route('/status')
-def status():
-    """Endpoint to check API status"""
-    # Re-check OpenAI status if it's been more than 5 minutes
-    if time.time() - openai_last_check > 300:
-        init_openai()
-    
-    return jsonify({
-        "server": "running",
-        "openai_available": OPENAI_AVAILABLE,
-        "openai_error": openai_error_message,
-        "timestamp": time.time()
-    })
-
-@app.route('/reinit-openai')
-def reinit_openai():
-    """Force reinitialize OpenAI client"""
-    success = init_openai()
-    return jsonify({
-        "success": success,
-        "message": "OpenAI client reinitialized",
-        "openai_available": OPENAI_AVAILABLE,
-        "error": openai_error_message
-    })
-
 def is_valid_analysis(analysis_text):
     """Check if the analysis is valid and not a refusal"""
     refusal_phrases = [
@@ -113,40 +86,9 @@ def is_valid_analysis(analysis_text):
             
     return True
 
-# API لتحليل الصور
-@app.route('/analyze', methods=['POST'])
-def analyze_image():
-    if 'file' not in request.files:
-        return jsonify({"error": "لم يتم إرسال صورة. الرجاء إرسال صورة واضحة"}), 400
-
-    file = request.files['file']
-
-    try:
-        # التحقق من أن الملف صورة
-        img = Image.open(file.stream)
-        if img.format not in ['PNG', 'JPEG', 'JPG']:
-            return jsonify({"error": "نوع الملف غير مدعوم. الرجاء إرسال PNG أو JPEG"}), 400
-
-        # Re-check OpenAI status if it's been a while
-        if time.time() - openai_last_check > 300:
-            init_openai()
-
-        # إذا كان OpenAI غير متاح
-        if not OPENAI_AVAILABLE:
-            return jsonify({
-                "error": "خدمة التحليل غير متاحة حالياً",
-                "message": "✅ الصورة صالحة ولكن خدمة الذكاء الاصطناعي غير متوفرة",
-                "details": openai_error_message,
-                "solution": "يرجى التحقق من إعدادات OpenAI API الخاصة بك"
-            }), 503
-
-        # تحويل الصورة إلى Base64
-        buffered = BytesIO()
-        img.save(buffered, format=img.format)
-        img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-
-        # Improved prompt for better analysis
-        analysis_prompt = """
+def analyze_with_openai(image_str, image_format):
+    """Analyze image with OpenAI"""
+    analysis_prompt = """
 أنت محلل فني محترف متخصص في تحليل charts التداول من MT4 و TradingView.
 مهمتك هي تحليل ANY chart يتم إرساله إليك، بغض النظر عن جودته أو وضوحه.
 حتى إذا كان Chart غير واضح أو غير مثالي، قم ببذل قصارى جهدك لتقديم أفضل تحليل ممكن.
@@ -202,45 +144,176 @@ def analyze_image():
 - حتى إذا كان Chart غير مثالي، قدم أفضل تحليل ممكن
 """
 
-        # إرسال إلى OpenAI لتحليل فني مضبوط
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "أنت محلل فني محترف للأسواق المالية. مهمتك هي تحليل ANY chart تداول يتم إرساله إليك وتقديم تحليل مفيد وقابل للتطبيق. لا ترفض تحليل أي chart لأي سبب."
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": analysis_prompt
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/{img.format.lower()};base64,{img_str}",
-                                "detail": "high"
-                            }
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {
+                "role": "system",
+                "content": "أنت محلل فني محترف للأسواق المالية. مهمتك هي تحليل ANY chart تداول يتم إرساله إليك وتقديم تحليل مفيد وقابل للتطبيق. لا ترفض تحليل أي chart لأي سبب."
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": analysis_prompt
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/{image_format.lower()};base64,{image_str}",
+                            "detail": "high"
                         }
-                    ]
-                }
-            ],
-            max_tokens=2000,
-            temperature=0.7  # Slightly higher temperature for more creative analysis
-        )
+                    }
+                ]
+            }
+        ],
+        max_tokens=2000,
+        temperature=0.7
+    )
+    
+    return response.choices[0].message.content.strip()
 
-        # استخراج التحليل من الرد
-        analysis = response.choices[0].message.content.strip()
+@app.route('/')
+def home():
+    status = "✅" if OPENAI_AVAILABLE else "❌"
+    return f"XFLEXAI Server is running {status} - OpenAI: {'Available' if OPENAI_AVAILABLE else openai_error_message}"
 
+# API لتحليل الصور من SendPulse
+@app.route('/sendpulse-analyze', methods=['POST'])
+def sendpulse_analyze():
+    """
+    Special endpoint for SendPulse integration
+    Expects JSON with image URL from SendPulse
+    """
+    try:
+        # Get JSON data from request
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "error": "No data provided",
+                "message": "يرجى إرسال بيانات الصورة بشكل صحيح"
+            }), 400
+        
+        # Extract image URL from SendPulse data structure
+        image_url = None
+        if 'last_message' in data:
+            image_url = data['last_message']
+        elif 'image_url' in data:
+            image_url = data['image_url']
+        
+        if not image_url:
+            return jsonify({
+                "error": "No image URL provided",
+                "message": "لم يتم تقديم رابط الصورة"
+            }), 400
+        
+        # Download image from URL
+        try:
+            response = requests.get(image_url, timeout=10)
+            if response.status_code != 200:
+                return jsonify({
+                    "error": "Failed to download image",
+                    "message": "تعذر تحميل الصورة من الرابط المقدم"
+                }), 400
+                
+            img = Image.open(BytesIO(response.content))
+            
+            # Check if it's a valid image
+            if img.format not in ['PNG', 'JPEG', 'JPG']:
+                return jsonify({
+                    "error": "Unsupported file type",
+                    "message": "نوع الملف غير مدعوم. الرجاء إرسال PNG أو JPEG"
+                }), 400
+                
+        except Exception as e:
+            return jsonify({
+                "error": "Image download failed",
+                "message": f"فشل في تحميل الصورة: {str(e)}"
+            }), 400
+        
+        # إذا كان OpenAI غير متاح
+        if not OPENAI_AVAILABLE:
+            return jsonify({
+                "error": "خدمة التحليل غير متاحة حالياً",
+                "message": "✅ الصورة صالحة ولكن خدمة الذكاء الاصطناعي غير متوفرة",
+                "details": openai_error_message
+            }), 503
+        
+        # Convert image to base64
+        buffered = BytesIO()
+        img_format = img.format if img.format else 'JPEG'
+        img.save(buffered, format=img_format)
+        img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+        
+        # Send to OpenAI for analysis
+        analysis = analyze_with_openai(img_str, img_format)
+        
         # Check if the analysis is valid
         if not is_valid_analysis(analysis):
             return jsonify({
                 "error": "فشل في تحليل الصورة",
                 "message": "لم يتمكن الذكاء الاصطناعي من تحليل الصورة بشكل صحيح",
-                "details": "التحليل الذي تم إرجاعه غير كافٍ أو يحتوي على عبارات رفض",
-                "analysis": analysis  # Still return the analysis for debugging
+                "details": "قد تكون الصورة غير واضحة أو غير مناسبة للتحليل"
+            }), 400
+            
+        # Return analysis in SendPulse compatible format
+        return jsonify({
+            "success": True,
+            "message": "✅ تم تحليل الشارت بنجاح",
+            "analysis": analysis,
+            # SendPulse can use these fields to send messages
+            "bot_response": f"✅ تم تحليل الشارت بنجاح\n\n{analysis}"
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            "error": "خطأ أثناء معالجة الصورة",
+            "message": f"تفاصيل الخطأ: {str(e)}"
+        }), 400
+
+# Keep the original endpoint for direct file uploads
+@app.route('/analyze', methods=['POST'])
+def analyze_image():
+    if 'file' not in request.files:
+        return jsonify({"error": "لم يتم إرسال صورة. الرجاء إرسال صورة واضحة"}), 400
+
+    file = request.files['file']
+
+    try:
+        # التحقق من أن الملف صورة
+        img = Image.open(file.stream)
+        if img.format not in ['PNG', 'JPEG', 'JPG']:
+            return jsonify({"error": "نوع الملف غير مدعوم. الرجاء إرسال PNG أو JPEG"}), 400
+
+        # Re-check OpenAI status if it's been a while
+        if time.time() - openai_last_check > 300:
+            init_openai()
+
+        # إذا كان OpenAI غير متاح
+        if not OPENAI_AVAILABLE:
+            return jsonify({
+                "error": "خدمة التحليل غير متاحة حالياً",
+                "message": "✅ الصورة صالحة ولكن خدمة الذكاء الاصطناعي غير متوفرة",
+                "details": openai_error_message
+            }), 503
+
+        # Convert image to base64
+        buffered = BytesIO()
+        img_format = img.format if img.format else 'JPEG'
+        img.save(buffered, format=img_format)
+        img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+
+        # Send to OpenAI for analysis
+        analysis = analyze_with_openai(img_str, img_format)
+        
+        # Check if the analysis is valid
+        if not is_valid_analysis(analysis):
+            return jsonify({
+                "error": "فشل في تحليل الصورة",
+                "message": "لم يتمكن الذكاء الاصطناعي من تحليل الصورة بشكل صحيح",
+                "details": "قد تكون الصورة غير واضحة أو غير مناسبة للتحليل"
             }), 400
 
         return jsonify({"message": "✅ تم تحليل الشارت بنجاح", "analysis": analysis}), 200
@@ -250,13 +323,10 @@ def analyze_image():
         
         # Handle specific OpenAI errors
         if "insufficient_quota" in error_msg:
-            # Update our status
             init_openai()
             return jsonify({
                 "error": "نفذ رصيد خدمة OpenAI",
                 "message": "حساب OpenAI لا يحتوي على رصيد كافي.",
-                "details": "على الرغم من إضافة الرصيد، قد تحتاج إلى الانتظار قليلاً حتى يصبح الرصيد فعالاً، أو التحقق من أن المفتاح المستخدم مرتبط بالحساب الصحيح.",
-                "solution": "الذهاب إلى platform.openai.com والتحقق من الرصيد ونشاط API"
             }), 402
         elif "invalid_api_key" in error_msg:
             init_openai()
@@ -274,6 +344,19 @@ def analyze_image():
                 "error": "خطأ أثناء معالجة الصورة",
                 "message": f"تفاصيل الخطأ: {error_msg}"
             }), 400
+
+@app.route('/status')
+def status():
+    """Endpoint to check API status"""
+    if time.time() - openai_last_check > 300:
+        init_openai()
+    
+    return jsonify({
+        "server": "running",
+        "openai_available": OPENAI_AVAILABLE,
+        "openai_error": openai_error_message,
+        "timestamp": time.time()
+    })
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
