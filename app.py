@@ -3,16 +3,22 @@ import base64
 from flask import Flask, request, jsonify
 from PIL import Image
 from io import BytesIO
-from openai import OpenAI
 
 # تهيئة Flask
 app = Flask(__name__)
 
-# تهيئة OpenAI Client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
 # تحديد حجم أقصى للرفع (5MB)
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
+
+# تهيئة OpenAI Client (with error handling)
+try:
+    from openai import OpenAI
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    OPENAI_AVAILABLE = True
+except Exception as e:
+    print(f"OpenAI initialization error: {e}")
+    OPENAI_AVAILABLE = False
+    client = None
 
 @app.route('/')
 def home():
@@ -32,6 +38,13 @@ def analyze_image():
         if img.format not in ['PNG', 'JPEG', 'JPG']:
             return jsonify({"error": "نوع الملف غير مدعوم. الرجاء إرسال PNG أو JPEG"}), 400
 
+        # إذا كان OpenAI غير متاح، إرجاع رسالة خطأ
+        if not OPENAI_AVAILABLE or client is None:
+            return jsonify({
+                "error": "خدمة التحليل غير متاحة حالياً",
+                "message": "✅ الصورة صالحة ولكن خدمة الذكاء الاصطناعي غير متوفرة"
+            }), 503
+
         # تحويل الصورة إلى Base64
         buffered = BytesIO()
         img.save(buffered, format=img.format)
@@ -39,7 +52,7 @@ def analyze_image():
 
         # إرسال إلى OpenAI لتحليل فني مضبوط
         response = client.chat.completions.create(
-            model="gpt-4.1-mini",
+            model="gpt-4-vision-preview",  # استخدام نموذج الرؤية المناسب
             messages=[
                 {
                     "role": "system",
@@ -85,7 +98,8 @@ def analyze_image():
                         }
                     ]
                 }
-            ]
+            ],
+            max_tokens=1000  # تحديد الحد الأقصى للرد
         )
 
         # استخراج التحليل من الرد
@@ -100,4 +114,5 @@ def analyze_image():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
