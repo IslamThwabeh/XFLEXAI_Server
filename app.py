@@ -177,58 +177,68 @@ def home():
     status = "✅" if OPENAI_AVAILABLE else "❌"
     return f"XFLEXAI Server is running {status} - OpenAI: {'Available' if OPENAI_AVAILABLE else openai_error_message}"
 
-# API لتحليل الصور من SendPulse
+# Unified API endpoint for both SendPulse and Postman
 @app.route('/sendpulse-analyze', methods=['POST'])
 def sendpulse_analyze():
     """
-    Special endpoint for SendPulse integration
-    Expects JSON with image URL from SendPulse
+    Unified endpoint for both SendPulse integration and Postman testing
+    Accepts both JSON (from SendPulse) and form-data (from Postman)
     """
     try:
-        # Get JSON data from request
-        data = request.get_json()
+        img = None
+        source = "unknown"
         
-        if not data:
-            return jsonify({
-                "message": "لم يتم إرسال بيانات الصورة",
-                "analysis": "فشل في التحليل: لم يتم إرسال بيانات الصورة"
-            }), 400
-        
-        # Extract image URL from SendPulse data structure
-        image_url = None
-        if 'last_message' in data:
-            image_url = data['last_message']
-        elif 'image_url' in data:
-            image_url = data['image_url']
-        
-        if not image_url:
-            return jsonify({
-                "message": "لم يتم تقديم رابط الصورة",
-                "analysis": "فشل في التحليل: لم يتم تقديم رابط الصورة"
-            }), 400
-        
-        # Download image from URL
-        try:
-            response = requests.get(image_url, timeout=10)
-            if response.status_code != 200:
-                return jsonify({
-                    "message": "تعذر تحميل الصورة من الرابط المقدم",
-                    "analysis": "فشل في التحليل: تعذر تحميل الصورة من الرابط المقدم"
-                }), 400
-                
-            img = Image.open(BytesIO(response.content))
+        # Check if this is a form-data request (from Postman)
+        if 'file' in request.files:
+            source = "postman"
+            file = request.files['file']
+            img = Image.open(file.stream)
             
-            # Check if it's a valid image
-            if img.format not in ['PNG', 'JPEG', 'JPG']:
+        # Check if this is a JSON request (from SendPulse)
+        elif request.is_json:
+            source = "sendpulse"
+            data = request.get_json()
+            
+            # Extract image URL from SendPulse data structure
+            image_url = None
+            if 'last_message' in data:
+                image_url = data['last_message']
+            elif 'image_url' in data:
+                image_url = data['image_url']
+            
+            if not image_url:
                 return jsonify({
-                    "message": "نوع الملف غير مدعوم. الرجاء إرسال PNG أو JPEG",
-                    "analysis": "فشل في التحليل: نوع الملف غير مدعوم"
+                    "message": "لم يتم تقديم رابط الصورة",
+                    "analysis": "فشل في التحليل: لم يتم تقديم رابط الصورة"
                 }), 400
+            
+            # Download image from URL
+            try:
+                response = requests.get(image_url, timeout=10)
+                if response.status_code != 200:
+                    return jsonify({
+                        "message": "تعذر تحميل الصورة من الرابط المقدم",
+                        "analysis": "فشل في التحليل: تعذر تحميل الصورة من الرابط المقدم"
+                    }), 400
+                    
+                img = Image.open(BytesIO(response.content))
                 
-        except Exception as e:
+            except Exception as e:
+                return jsonify({
+                    "message": f"فشل في تحميل الصورة: {str(e)}",
+                    "analysis": f"فشل في التحليل: فشل في تحميل الصورة ({str(e)})"
+                }), 400
+        else:
             return jsonify({
-                "message": f"فشل في تحميل الصورة: {str(e)}",
-                "analysis": f"فشل في التحليل: فشل في تحميل الصورة ({str(e)})"
+                "message": "طلب غير مدعوم",
+                "analysis": "فشل في التحليل: نوع الطلب غير مدعوم"
+            }), 400
+        
+        # Check if it's a valid image
+        if img.format not in ['PNG', 'JPEG', 'JPG']:
+            return jsonify({
+                "message": "نوع الملف غير مدعوم. الرجاء إرسال PNG أو JPEG",
+                "analysis": "فشل في التحليل: نوع الملف غير مدعوم"
             }), 400
         
         # إذا كان OpenAI غير متاح
@@ -254,10 +264,11 @@ def sendpulse_analyze():
                 "analysis": "فشل في التحليل: لم يتمكن الذكاء الاصطناعي من تحليل الصورة بشكل صحيح"
             }), 400
             
-        # Return analysis in SendPulse compatible format
+        # Return analysis in the expected format
         return jsonify({
             "message": "✅ تم تحليل الشارت بنجاح",
-            "analysis": analysis
+            "analysis": analysis,
+            "source": source  # For debugging purposes
         }), 200
         
     except Exception as e:
