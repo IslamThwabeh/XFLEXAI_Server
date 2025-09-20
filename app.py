@@ -72,50 +72,64 @@ def init_openai():
 # Initialize OpenAI on startup
 init_openai()
 
-def is_complete_response(response_text):
-    """Check if the response seems complete"""
-    if not response_text or not response_text.strip():
+[Odef is_complete_response(response_text):
+    """Check if the response seems complete with more precise criteria"""
+    if not response_text or len(response_text.strip()) < 150:  # Increased minimum length
         return False
     
-    # التحقق من أن الرد لا ينتهي بجملة غير مكتملة
-    if not response_text.endswith(('.', '!', '?')):
+    # Check if the response ends with a complete sentence
+    last_char = response_text.strip()[-1]
+    if last_char not in ['.', '!', '?', ':', ';', '،', ')', ']', '}']:
         return False
     
-    # التحقق من أن الرد يحتوي على أقسام كافية
-    sections = ['اتجاه', 'دعم', 'مقاومة', 'دخول', 'خروج', 'مخاطرة']
-    found_sections = sum(1 for section in sections if section in response_text)
+    # Check for specific incomplete patterns
+    incomplete_patterns = [
+        r'\(Stop-L', r'\(Take-P', r'\(SL', r'\(TP', 
+        r'إيقاف الخسارة', r'وقف الخسارة', r'أخذ الربح',
+        r'...', r'…', r'\.\.\.'
+    ]
     
-    return found_sections >= 3
+    for pattern in incomplete_patterns:
+        if re.search(pattern, response_text[-20:]):  # Check last 20 characters
+            return False
+    
+    # Check if all key sections are present
+    key_sections = ['الاتجاه', 'الدعم', 'المقاومة', 'الدخول', 'الخروج', 'المخاطر']
+    found_sections = sum(1 for section in key_sections if section in response_text)
+    
+    return found_sections >= 4  # At least 4 out of 6 key sections
 
 def analyze_with_openai(image_str, image_format, timeframe=None, previous_analysis=None):
-    """Analyze image with OpenAI with enhanced SMC and Fibonacci analysis"""
-
+    """Analyze image with OpenAI with enhanced prompt to avoid truncation"""
+    
     if timeframe == "H4" and previous_analysis:
-        # Enhanced analysis for 4-hour with SMC and Fibonacci
         analysis_prompt = f"""
-أنت الآن محلل فني محترف. قدم تحليلاً واضحاً وشاملاً للشارت المعروض.
+أنت محلل فني محترف. قدم تحليلاً واضحاً وشاملاً للشارت المعروض للإطار 4 ساعات.
 
 بناءً على التحليل السابق للإطار 15 دقيقة:
 {previous_analysis}
 
-قم بتحليل هذا الشارت للإطار 4 ساعات مع التركيز على:
-1. تحليل الاتجاه العام ومستويات الدعم والمقاومة
-2. تحليل مؤشر RSI والمتوسطات المتحركة
-3. تحديد مناطق الدخول والخروج
-4. إدارة المخاطر ونسب المكافأة/المخاطرة
+ركز على النقاط التالية في تحليلك:
+1. تحليل الاتجاه العام وهيكل السوق
+2. تحديد مستويات الدعم والمقاومة الرئيسية
+3. تحليل مؤشر RSI والمتوسطات المتحركة
+4. تحديد مناطق الدخول والخروج المحتملة
+5. إدارة المخاطر ونسب المكافأة إلى المخاطرة
 
-قدم تحليلاً واضحاً وسهل الفهم للمتداولين المبتدئين.
+**ملاحظة مهمة**: يجب أن يكون تحليلك مكتملاً ولا ينقطع فجأة. تأكد من إنهاء جميع الجمل بشكل صحيح.
 """
     else:
-        # Standard analysis for 15-minute or single timeframe
         analysis_prompt = """
-أنت محلل فني محترف. قدم تحليلاً واضحاً وشاملاً للشارت المعروض مع التركيز على:
-1. الاتجاه العام ومستويات الدعم والمقاومة
-2. تحليل مؤشر RSI إذا كان مرئياً
-3. نقاط الدخول والخروج المحتملة
-4. إدارة المخاطر الأساسية
+أنت محلل فني محترف. قدم تحليلاً واضحاً وشاملاً للشارت المعروض للإطار 15 دقيقة.
 
-قدم تحليلاً واضحاً وسهل الفهم للمتداولين المبتدئين.
+ركز على النقاط التالية في تحليلك:
+1. تحليل الاتجاه العام وهيكل السوق
+2. تحديد مستويات الدعم والمقاومة الرئيسية
+3. تحليل مؤشر RSI إذا كان مرئياً
+4. تحديد مناطق الدخول والخروج المحتملة
+5. إدارة المخاطر الأساسية
+
+**ملاحظة مهمة**: يجب أن يكون تحليلك مكتملاً ولا ينقطع فجأة. تأكد من إنهاء جميع الجمل بشكل صحيح.
 """
 
     response = client.chat.completions.create(
@@ -123,7 +137,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
         messages=[
             {
                 "role": "system",
-                "content": "أنت محلل فني محترف للأسواق المالية. قدم تحليلاً دقيقاً وعملياً بلغة واضحة للمبتدئين. ركز على النقاط العملية والتوصيات الواضحة."
+                "content": "أنت محلل فني محترف. قدم تحليلاً دقيقاً وعملياً بلغة واضحة. تأكد من إكمال جميع أقسام التحليل وعدم قطع الرد فجأة. ركز على الجوانب العملية للتداول."
             },
             {
                 "role": "user",
@@ -142,7 +156,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
                 ]
             }
         ],
-        max_tokens=4000,
+        max_tokens=3000,  # Reduced to avoid excessive token usage
         temperature=0.7
     )
 
@@ -222,9 +236,18 @@ def multi_timeframe_analyze():
             # First image - assume M15
             analysis = analyze_with_openai(img_str, img_format, "M15")
             
-            # التحقق من اكتمال الرد
+            # Check if response is complete
             if not is_complete_response(analysis):
-                analysis = analyze_with_openai(img_str, img_format, "M15")
+                # Instead of retrying, add a note about incomplete sections
+                incomplete_sections = []
+                if 'المخاطر' not in analysis or 'إيقاف الخسارة' not in analysis:
+                    incomplete_sections.append("إدارة المخاطر")
+                if 'الدخول' not in analysis or 'الخروج' not in analysis:
+                    incomplete_sections.append("نقاط الدخول والخروج")
+                
+                if incomplete_sections:
+                    completion_note = f"\n\n⚠️ ملاحظة: التحليل غير مكتمل في قسم {', '.join(incomplete_sections)}. يوصى بمراجعة هذه النقاط يدوياً."
+                    analysis += completion_note
                 
             session['m15_analysis'] = analysis
             session['status'] = 'awaiting_h4'
@@ -241,9 +264,18 @@ def multi_timeframe_analyze():
             # Second image - H4 with comprehensive analysis
             analysis = analyze_with_openai(img_str, img_format, "H4", session['m15_analysis'])
             
-            # التحقق من اكتمال الرد
+            # Check if response is complete
             if not is_complete_response(analysis):
-                analysis = analyze_with_openai(img_str, img_format, "H4", session['m15_analysis'])
+                # Instead of retrying, add a note about incomplete sections
+                incomplete_sections = []
+                if 'المخاطر' not in analysis or 'إيقاف الخسارة' not in analysis:
+                    incomplete_sections.append("إدارة المخاطر")
+                if 'الدخول' not in analysis or 'الخروج' not in analysis:
+                    incomplete_sections.append("نقاط الدخول والخروج")
+                
+                if incomplete_sections:
+                    completion_note = f"\n\n⚠️ ملاحظة: التحليل غير مكتمل في قسم {', '.join(incomplete_sections)}. يوصى بمراجعة هذه النقاط يدوياً."
+                    analysis += completion_note
                 
             session['h4_analysis'] = analysis
             session['status'] = 'completed'
