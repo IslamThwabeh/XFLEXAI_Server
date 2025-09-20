@@ -64,6 +64,35 @@ def init_openai():
 
 init_openai()
 
+def split_long_message(message, max_length=4000):
+    """
+    تقسيم الرسالة الطويلة إلى أجزاء لتجنب القطع في منصات الرسائل
+    """
+    if len(message) <= max_length:
+        return [message]
+    
+    parts = []
+    while message:
+        if len(message) <= max_length:
+            parts.append(message)
+            break
+        
+        # البحث عن آخر نقطة فصل مناسبة لتقسيم الرسالة
+        split_index = message.rfind('\n', 0, max_length)
+        if split_index == -1:
+            split_index = message.rfind('. ', 0, max_length)
+        if split_index == -1:
+            split_index = message.rfind(' ', 0, max_length)
+        if split_index == -1:
+            split_index = max_length
+            
+        part = message[:split_index].strip()
+        if part:
+            parts.append(part)
+        message = message[split_index:].strip()
+    
+    return parts
+
 def is_complete_response(response_text):
     if not response_text or len(response_text.strip()) < 150:
         return False
@@ -156,6 +185,13 @@ def home():
 @app.route('/multi-timeframe-analyze', methods=['POST'])
 def multi_timeframe_analyze():
     try:
+        # التحقق من أن الطلب بتنسيق JSON
+        if not request.is_json:
+            return jsonify({
+                "message": "نوع المحتوى غير مدعوم",
+                "analysis": "فشل في التحليل: يجب أن يكون الطلب بتنسيق JSON"
+            }), 415
+
         data = request.get_json()
 
         if not data:
@@ -227,10 +263,13 @@ def multi_timeframe_analyze():
             session['m15_analysis'] = analysis
             session['status'] = 'awaiting_h4'
 
+            # تقسيم الرد إذا كان طويلاً
+            analysis_chunks = split_long_message(analysis)
+            
             return jsonify({
                 "message": "✅ تم تحليل الشارت 15 دقيقة بنجاح",
-                "analysis": analysis,
-                "next_step": "الرجاء إرسال صورة الإطار 4 ساعات للتحليل المتكامل",
+                "analysis": analysis_chunks,
+[O                "next_step": "الرجاء إرسال صورة الإطار 4 ساعات للتحليل المتكامل",
                 "status": "awaiting_h4",
                 "user_id": user_id
             }), 200
@@ -268,11 +307,14 @@ def multi_timeframe_analyze():
 - أهداف الربح المحتملة
 """
 
+            # تقسيم الرد النهائي إذا كان طويلاً
+            final_analysis_chunks = split_long_message(final_analysis)
+
             del analysis_sessions[user_id]
 
             return jsonify({
                 "message": "✅ تم التحليل الشامل بنجاح",
-                "analysis": final_analysis,
+                "analysis": final_analysis_chunks,
                 "status": "completed"
             }), 200
 
@@ -281,6 +323,83 @@ def multi_timeframe_analyze():
                 "message": "خطأ في تسلسل التحليل",
                 "analysis": "الرجاء البدء بإرسال صورة الإطار 15 دقيقة أولاً"
             }), 400
+
+    except Exception as e:
+        return jsonify({
+            "message": f"خطأ أثناء المعالجة: {str(e)}",
+            "analysis": f"فشل في التحليل: {str(e)}"
+        }), 400
+
+# إضافة endpoint جديد لتحميل الملفات مباشرة
+@app.route('/upload-analyze', methods=['POST'])
+def upload_analyze():
+    """
+    endpoint جديد لتحميل الصور مباشرة بدلاً من الروابط
+    """
+    try:
+        # التحقق من وجود ملف في الطلب
+        if 'file' not in request.files:
+            return jsonify({
+                "message": "لم يتم تقديم ملف",
+                "analysis": "فشل في التحليل: لم يتم تقديم ملف"
+            }), 400
+        
+        file = request.files['file']
+        
+        # إذا لم يحدد المستخدم ملف
+        if file.filename == '':
+            return jsonify({
+                "message": "لم يتم تحديد ملف",
+                "analysis": "فشل في التحليل: لم يتم تحديد ملف"
+            }), 400
+        
+        # معالجة الصورة
+        img = Image.open(file.stream)
+        
+        if img.format not in ['PNG', 'JPEG', 'JPG']:
+            return jsonify({
+                "message": "نوع الملف غير مدعوم",
+                "analysis": "فشل في التحليل: نوع الملف غير مدعوم"
+            }), 400
+
+        if not OPENAI_AVAILABLE:
+            return jsonify({
+                "message": "خدمة الذكاء الاصطناعي غير متوفرة",
+                "analysis": f"فشل في التحليل: {openai_error_message}"
+            }), 503
+
+        # تحويل الصورة إلى base64
+        buffered = BytesIO()
+        img_format = img.format if img.format else 'JPEG'
+        img.save(buffered, format=img_format)
+        img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+
+        # استخدام user_id افتراضي للتحميل المباشر
+        user_id = "direct_upload_user"
+        
+        # تحليل الصورة
+        analysis = analyze_with_openai(img_str, img_format, "M15")
+        
+        if not is_complete_response(analysis):
+            incomplete_sections = []
+            if 'المخاطر' not in analysis or 'إيقاف الخسارة' not in analysis:
+                incomplete_sections.append("إدارة المخاطر")
+            if 'الدخول' not in analysis or 'الخروج' not in analysis:
+                incomplete_sections.append("نقاط الدخول والخروج")
+            
+            if incomplete_sections:
+                completion_note = f"\n\n⚠️ ملاحظة: التحليل غير مكتمل في قسم {', '.join(incomplete_sections)}. يوصى بمراجعة هذه النقاط يدوياً."
+                analysis += completion_note
+        
+        # تقسيم الرد إذا كان طويلاً
+        analysis_chunks = split_long_message(analysis)
+        
+        return jsonify({
+            "message": "✅ تم تحليل الشارت بنجاح",
+            "analysis": analysis_chunks,
+            "next_step": "يمكنك إرسال صورة الإطار 4 ساعات للتحليل المتكامل",
+            "status": "completed"
+        }), 200
 
     except Exception as e:
         return jsonify({
