@@ -340,75 +340,13 @@ def multi_timeframe_analyze():
             "analysis": f"فشل في التحليل: {str(e)}"
         }), 400
 
-# Simplified SendPulse endpoint - single image analysis only
+# Keep the original endpoint for backward compatibility
 @app.route('/sendpulse-analyze', methods=['POST'])
 def sendpulse_analyze():
     """
-    Simplified endpoint for SendPulse - single image analysis only
+    Backward compatibility endpoint - redirects to multi-timeframe analysis
     """
-    try:
-        # Handle both JSON and form data for SendPulse compatibility
-        if request.is_json:
-            data = request.get_json()
-        else:
-            data = request.form.to_dict()
-
-        if not data:
-            return jsonify({
-                "message": "لم يتم إرسال بيانات",
-                "analysis": "فشل في التحليل: لم يتم إرسال بيانات"
-            }), 400
-
-        image_url = data.get('last_message') or data.get('image_url')
-
-        if not image_url:
-            return jsonify({
-                "message": "لم يتم تقديم رابط الصورة",
-                "analysis": "فشل في التحليل: لم يتم تقديم رابط الصورة"
-            }), 400
-
-        # Download and process image
-        response = requests.get(image_url, timeout=10)
-        if response.status_code != 200:
-            return jsonify({
-                "message": "تعذر تحميل الصورة",
-                "analysis": "فشل في التحليل: تعذر تحميل الصورة"
-            }), 400
-
-        img = Image.open(BytesIO(response.content))
-
-        if img.format not in ['PNG', 'JPEG', 'JPG']:
-            return jsonify({
-                "message": "نوع الملف غير مدعوم",
-                "analysis": "فشل في التحليل: نوع الملف غير مدعوم"
-            }), 400
-
-        if not OPENAI_AVAILABLE:
-            return jsonify({
-                "message": "خدمة الذكاء الاصطناعي غير متوفرة",
-                "analysis": f"فشل في التحليل: {openai_error_message}"
-            }), 503
-
-        # Convert image to base64
-        buffered = BytesIO()
-        img_format = img.format if img.format else 'JPEG'
-        img.save(buffered, format=img_format)
-        img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-
-        # Perform single analysis (not multi-timeframe)
-        analysis = analyze_with_openai(img_str, img_format)
-
-        return jsonify({
-            "message": "✅ تم تحليل الشارت بنجاح",
-            "analysis": analysis,
-            "status": "completed"
-        }), 200
-
-    except Exception as e:
-        return jsonify({
-            "message": f"خطأ أثناء المعالجة: {str(e)}",
-            "analysis": f"فشل في التحليل: {str(e)}"
-        }), 400
+    return multi_timeframe_analyze()
 
 @app.route('/status')
 def status():
