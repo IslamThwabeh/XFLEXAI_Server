@@ -64,20 +64,21 @@ def init_openai():
 
 init_openai()
 
-def split_long_message(message, max_length=4000):
+def split_long_message(message, max_length=2000):
     """
-    تقسيم الرسالة الطويلة إلى أجزاء لتجنب القطع في منصات الرسائل
+    تقسيم الرسالة الطويلة إلى أجزاء، مع مراعاة حدود SendPulse
     """
+    # إذا كان النص أقصر من الحد الأقصى، أرجعه كما هو
     if len(message) <= max_length:
-        return [message]
+        return message
     
+    # إذا كان أطول، قسّمه إلى أجزاء
     parts = []
     while message:
         if len(message) <= max_length:
             parts.append(message)
             break
         
-        # البحث عن آخر نقطة فصل مناسبة لتقسيم الرسالة
         split_index = message.rfind('\n', 0, max_length)
         if split_index == -1:
             split_index = message.rfind('. ', 0, max_length)
@@ -185,7 +186,6 @@ def home():
 @app.route('/multi-timeframe-analyze', methods=['POST'])
 def multi_timeframe_analyze():
     try:
-        # التحقق من أن الطلب بتنسيق JSON
         if not request.is_json:
             return jsonify({
                 "message": "نوع المحتوى غير مدعوم",
@@ -203,6 +203,7 @@ def multi_timeframe_analyze():
         user_id = data.get('user_id', 'default_user')
         image_url = data.get('last_message') or data.get('image_url')
         timeframe = data.get('timeframe')
+        format_for_sendpulse = data.get('format_for_sendpulse', True)  # إضافة خيار للتنسيق
 
         if not image_url:
             return jsonify({
@@ -263,13 +264,19 @@ def multi_timeframe_analyze():
             session['m15_analysis'] = analysis
             session['status'] = 'awaiting_h4'
 
-            # تقسيم الرد إذا كان طويلاً
+            # تقسيم الرد مع مراعاة SendPulse
             analysis_chunks = split_long_message(analysis)
             
+            # إذا طلبنا تنسيق SendPulse وكانت النتيجة قائمة، ندمجها
+            if format_for_sendpulse and isinstance(analysis_chunks, list):
+                analysis_response = "\n\n".join(analysis_chunks)
+            else:
+                analysis_response = analysis_chunks
+
             return jsonify({
                 "message": "✅ تم تحليل الشارت 15 دقيقة بنجاح",
-                "analysis": analysis_chunks,
-[O                "next_step": "الرجاء إرسال صورة الإطار 4 ساعات للتحليل المتكامل",
+                "analysis": analysis_response,
+                "next_step": "الرجاء إرسال صورة الإطار 4 ساعات للتحليل المتكامل",
                 "status": "awaiting_h4",
                 "user_id": user_id
             }), 200
@@ -307,14 +314,20 @@ def multi_timeframe_analyze():
 - أهداف الربح المحتملة
 """
 
-            # تقسيم الرد النهائي إذا كان طويلاً
+            # تقسيم الرد النهائي مع مراعاة SendPulse
             final_analysis_chunks = split_long_message(final_analysis)
+            
+            # إذا طلبنا تنسيق SendPulse وكانت النتيجة قائمة، ندمجها
+            if format_for_sendpulse and isinstance(final_analysis_chunks, list):
+                final_analysis_response = "\n\n".join(final_analysis_chunks)
+            else:
+                final_analysis_response = final_analysis_chunks
 
             del analysis_sessions[user_id]
 
             return jsonify({
                 "message": "✅ تم التحليل الشامل بنجاح",
-                "analysis": final_analysis_chunks,
+                "analysis": final_analysis_response,
                 "status": "completed"
             }), 200
 
@@ -323,83 +336,6 @@ def multi_timeframe_analyze():
                 "message": "خطأ في تسلسل التحليل",
                 "analysis": "الرجاء البدء بإرسال صورة الإطار 15 دقيقة أولاً"
             }), 400
-
-    except Exception as e:
-        return jsonify({
-            "message": f"خطأ أثناء المعالجة: {str(e)}",
-            "analysis": f"فشل في التحليل: {str(e)}"
-        }), 400
-
-# إضافة endpoint جديد لتحميل الملفات مباشرة
-@app.route('/upload-analyze', methods=['POST'])
-def upload_analyze():
-    """
-    endpoint جديد لتحميل الصور مباشرة بدلاً من الروابط
-    """
-    try:
-        # التحقق من وجود ملف في الطلب
-        if 'file' not in request.files:
-            return jsonify({
-                "message": "لم يتم تقديم ملف",
-                "analysis": "فشل في التحليل: لم يتم تقديم ملف"
-            }), 400
-        
-        file = request.files['file']
-        
-        # إذا لم يحدد المستخدم ملف
-        if file.filename == '':
-            return jsonify({
-                "message": "لم يتم تحديد ملف",
-                "analysis": "فشل في التحليل: لم يتم تحديد ملف"
-            }), 400
-        
-        # معالجة الصورة
-        img = Image.open(file.stream)
-        
-        if img.format not in ['PNG', 'JPEG', 'JPG']:
-            return jsonify({
-                "message": "نوع الملف غير مدعوم",
-                "analysis": "فشل في التحليل: نوع الملف غير مدعوم"
-            }), 400
-
-        if not OPENAI_AVAILABLE:
-            return jsonify({
-                "message": "خدمة الذكاء الاصطناعي غير متوفرة",
-                "analysis": f"فشل في التحليل: {openai_error_message}"
-            }), 503
-
-        # تحويل الصورة إلى base64
-        buffered = BytesIO()
-        img_format = img.format if img.format else 'JPEG'
-        img.save(buffered, format=img_format)
-        img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-
-        # استخدام user_id افتراضي للتحميل المباشر
-        user_id = "direct_upload_user"
-        
-        # تحليل الصورة
-        analysis = analyze_with_openai(img_str, img_format, "M15")
-        
-        if not is_complete_response(analysis):
-            incomplete_sections = []
-            if 'المخاطر' not in analysis or 'إيقاف الخسارة' not in analysis:
-                incomplete_sections.append("إدارة المخاطر")
-            if 'الدخول' not in analysis or 'الخروج' not in analysis:
-                incomplete_sections.append("نقاط الدخول والخروج")
-            
-            if incomplete_sections:
-                completion_note = f"\n\n⚠️ ملاحظة: التحليل غير مكتمل في قسم {', '.join(incomplete_sections)}. يوصى بمراجعة هذه النقاط يدوياً."
-                analysis += completion_note
-        
-        # تقسيم الرد إذا كان طويلاً
-        analysis_chunks = split_long_message(analysis)
-        
-        return jsonify({
-            "message": "✅ تم تحليل الشارت بنجاح",
-            "analysis": analysis_chunks,
-            "next_step": "يمكنك إرسال صورة الإطار 4 ساعات للتحليل المتكامل",
-            "status": "completed"
-        }), 200
 
     except Exception as e:
         return jsonify({
