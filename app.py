@@ -28,17 +28,17 @@ openai_last_check = 0
 def init_openai():
     """Initialize OpenAI client with error handling"""
     global OPENAI_AVAILABLE, client, openai_error_message, openai_last_check
-    
+
     try:
         from openai import OpenAI
         api_key = os.getenv("OPENAI_API_KEY")
-        
+
         if not api_key or api_key == "your-api-key-here":
             openai_error_message = "OpenAI API key not configured"
             return False
-            
+
         client = OpenAI(api_key=api_key)
-        
+
         # Test the API with a simple request
         try:
             models = client.models.list()
@@ -47,12 +47,12 @@ def init_openai():
             if "gpt-4o" not in model_ids:
                 openai_error_message = "GPT-4o model not available in your account"
                 return False
-                
+
             OPENAI_AVAILABLE = True
             openai_error_message = ""
             openai_last_check = time.time()
             return True
-            
+
         except Exception as e:
             error_msg = str(e)
             if "insufficient_quota" in error_msg:
@@ -62,7 +62,7 @@ def init_openai():
             else:
                 openai_error_message = f"OpenAI API test failed: {error_msg}"
             return False
-            
+
     except ImportError:
         openai_error_message = "OpenAI package not installed"
         return False
@@ -76,18 +76,18 @@ init_openai()
 def is_valid_analysis(analysis_text):
     """Check if the analysis is valid and not a refusal"""
     refusal_phrases = [
-        "sorry", "عذرًا", "لا أستطيع", "cannot", "can't help", 
+        "sorry", "عذرًا", "لا أستطيع", "cannot", "can't help",
         "I'm sorry", "I am sorry", "unable to", "لا يمكنني"
     ]
-    
+
     # If the analysis is too short or contains refusal phrases, it's invalid
     if len(analysis_text.strip()) < 50:
         return False
-        
+
     for phrase in refusal_phrases:
         if phrase.lower() in analysis_text.lower():
             return False
-            
+
     return True
 
 def compress_image(img, max_size=(1024, 1024), quality=85):
@@ -95,11 +95,11 @@ def compress_image(img, max_size=(1024, 1024), quality=85):
     # Resize if needed
     if img.size[0] > max_size[0] or img.size[1] > max_size[1]:
         img.thumbnail(max_size, Image.Resampling.LANCZOS)
-    
+
     # Convert to JPEG if it's not already (smaller size)
     if img.format != 'JPEG':
         img = img.convert('RGB')
-    
+
     return img
 
 def get_image_hash(image_data):
@@ -120,7 +120,7 @@ def is_high_quality_image(img):
 
 def analyze_with_openai(image_str, image_format, timeframe=None, previous_analysis=None):
     """Analyze image with OpenAI with enhanced SMC and Fibonacci analysis"""
-    
+
     if timeframe == "H4" and previous_analysis:
         # Enhanced analysis for 4-hour with SMC and Fibonacci
         analysis_prompt = f"""
@@ -255,12 +255,12 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
         max_tokens=3000,  # Increased token limit
         temperature=0.7
     )
-    
+
     # Check if response was truncated
     analysis = response.choices[0].message.content.strip()
     if response.choices[0].finish_reason == "length":
         analysis += "\n\n⚠️ ملاحظة: تم قطع التحليل بسبب طول النص. يرجى إرسال صورة أكثر وضوحاً أو التركيز على العناصر الرئيسية فقط."
-    
+
     return analysis
 
 @app.route('/')
@@ -275,24 +275,28 @@ def multi_timeframe_analyze():
     Handle multi-timeframe analysis with session management
     """
     try:
-        data = request.get_json()
-        
+        # Handle both JSON and form data for SendPulse compatibility
+        if request.is_json:
+            data = request.get_json()
+        else:
+            data = request.form.to_dict()
+
         if not data:
             return jsonify({
                 "message": "لم يتم إرسال بيانات",
                 "analysis": "فشل في التحليل: لم يتم إرسال بيانات"
             }), 400
-        
+
         user_id = data.get('user_id', 'default_user')
         image_url = data.get('last_message') or data.get('image_url')
         timeframe = data.get('timeframe')
-        
+
         if not image_url:
             return jsonify({
                 "message": "لم يتم تقديم رابط الصورة",
                 "analysis": "فشل في التحليل: لم يتم تقديم رابط الصورة"
             }), 400
-        
+
         # Initialize user session if not exists
         if user_id not in analysis_sessions:
             analysis_sessions[user_id] = {
@@ -301,9 +305,9 @@ def multi_timeframe_analyze():
                 'created_at': datetime.now(),
                 'status': 'awaiting_m15'
             }
-        
+
         session = analysis_sessions[user_id]
-        
+
         # Download and process image
         response = requests.get(image_url, timeout=10)
         if response.status_code != 200:
@@ -311,42 +315,42 @@ def multi_timeframe_analyze():
                 "message": "تعذر تحميل الصورة",
                 "analysis": "فشل في التحليل: تعذر تحميل الصورة"
             }), 400
-            
+
         img = Image.open(BytesIO(response.content))
-        
+
         # Check if it's a valid image
         if img.format not in ['PNG', 'JPEG', 'JPG']:
             return jsonify({
                 "message": "نوع الملف غير مدعوم. الرجاء إرسال PNG أو JPEG",
                 "analysis": "فشل في التحليل: نوع الملف غير مدعوم"
             }), 400
-        
+
         # Check image quality
         if not is_high_quality_image(img):
             return jsonify({
                 "message": "جودة الصورة غير كافية للتحليل الدقيق",
                 "analysis": "فشل في التحليل: جودة الصورة منخفضة. يرجى إرسال صورة أوضح وأكبر حجماً"
             }), 400
-        
+
         if not OPENAI_AVAILABLE:
             return jsonify({
                 "message": "خدمة الذكاء الاصطناعي غير متوفرة",
                 "analysis": f"فشل في التحليل: {openai_error_message}"
             }), 503
-        
+
         # Compress image to reduce size
         img = compress_image(img)
-        
+
         # Convert image to base64
         buffered = BytesIO()
         img_format = img.format if img.format else 'JPEG'
         img.save(buffered, format=img_format, optimize=True, quality=85)
         img_data = buffered.getvalue()
         img_str = base64.b64encode(img_data).decode("utf-8")
-        
+
         # Generate image hash for caching
         image_hash = get_image_hash(img_data)
-        
+
         # Check cache first
         cached_result = cached_analysis(image_hash, timeframe, session.get('m15_analysis_hash'))
         if cached_result and cached_result != "MISS":
@@ -360,7 +364,7 @@ def multi_timeframe_analyze():
                 session['m15_analysis'] = analysis
                 session['m15_analysis_hash'] = hash(analysis)
                 session['status'] = 'awaiting_h4'
-                
+
                 return jsonify({
                     "message": "✅ تم تحليل الشارت 15 دقيقة بنجاح",
                     "analysis": analysis,
@@ -368,13 +372,13 @@ def multi_timeframe_analyze():
                     "status": "awaiting_h4",
                     "user_id": user_id
                 }), 200
-                
+
             elif session['status'] == 'awaiting_h4' and timeframe == "H4":
                 # Second image - H4 with comprehensive analysis
                 analysis = analyze_with_openai(img_str, img_format, "H4", session['m15_analysis'])
                 session['h4_analysis'] = analysis
                 session['status'] = 'completed'
-                
+
                 # Prepare final comprehensive analysis
                 final_analysis = f"""
 ## 📊 التحليل الشامل متعدد الأطر الزمنية
@@ -407,22 +411,22 @@ def multi_timeframe_analyze():
 ### ✅ الخلاصة النهائية:
 [ملخص واضح باللغة العربية البسيطة يناسب جميع المستويات]
 """
-                
+
                 # Clean up session after completion
                 del analysis_sessions[user_id]
-                
+
                 return jsonify({
                     "message": "✅ تم التحليل الشامل بنجاح",
                     "analysis": final_analysis,
                     "status": "completed"
                 }), 200
-                
+
             else:
                 return jsonify({
                     "message": "خطأ في تسلسل التحليل",
                     "analysis": "الرجاء البدء بإرسال صورة الإطار 15 دقيقة أولاً"
                 }), 400
-        
+
     except Exception as e:
         return jsonify({
             "message": f"خطأ أثناء المعالجة: {str(e)}",
@@ -433,16 +437,91 @@ def multi_timeframe_analyze():
 @app.route('/sendpulse-analyze', methods=['POST'])
 def sendpulse_analyze():
     """
-    Backward compatibility endpoint - redirects to multi-timeframe analysis
+    Backward compatibility endpoint for SendPulse
     """
-    return multi_timeframe_analyze()
+    try:
+        # Handle both JSON and form data for SendPulse compatibility
+        if request.is_json:
+            data = request.get_json()
+        else:
+            data = request.form.to_dict()
+
+        if not data:
+            return jsonify({
+                "message": "لم يتم إرسال بيانات",
+                "analysis": "فشل في التحليل: لم يتم إرسال بيانات"
+            }), 400
+
+        user_id = data.get('user_id', 'default_user')
+        image_url = data.get('last_message') or data.get('image_url')
+
+        if not image_url:
+            return jsonify({
+                "message": "لم يتم تقديم رابط الصورة",
+                "analysis": "فشل في التحليل: لم يتم تقديم رابط الصورة"
+            }), 400
+
+        # Download and process image
+        response = requests.get(image_url, timeout=10)
+        if response.status_code != 200:
+            return jsonify({
+                "message": "تعذر تحميل الصورة",
+                "analysis": "فشل في التحليل: تعذر تحميل الصورة"
+            }), 400
+
+        img = Image.open(BytesIO(response.content))
+
+        # Check if it's a valid image
+        if img.format not in ['PNG', 'JPEG', 'JPG']:
+            return jsonify({
+                "message": "نوع الملف غير مدعوم. الرجاء إرسال PNG أو JPEG",
+                "analysis": "فشل في التحليل: نوع الملف غير مدعوم"
+            }), 400
+
+        # Check image quality
+        if not is_high_quality_image(img):
+            return jsonify({
+                "message": "جودة الصورة غير كافية للتحليل الدقيق",
+                "analysis": "فشل في التحليل: جودة الصورة منخفضة. يرجى إرسال صورة أوضح وأكبر حجماً"
+            }), 400
+
+        if not OPENAI_AVAILABLE:
+            return jsonify({
+                "message": "خدمة الذكاء الاصطناعي غير متوفرة",
+                "analysis": f"فشل في التحليل: {openai_error_message}"
+            }), 503
+
+        # Compress image to reduce size
+        img = compress_image(img)
+
+        # Convert image to base64
+        buffered = BytesIO()
+        img_format = img.format if img.format else 'JPEG'
+        img.save(buffered, format=img_format, optimize=True, quality=85)
+        img_data = buffered.getvalue()
+        img_str = base64.b64encode(img_data).decode("utf-8")
+
+        # Perform single analysis (not multi-timeframe)
+        analysis = analyze_with_openai(img_str, img_format)
+
+        return jsonify({
+            "message": "✅ تم تحليل الشارت بنجاح",
+            "analysis": analysis,
+            "status": "completed"
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            "message": f"خطأ أثناء المعالجة: {str(e)}",
+            "analysis": f"فشل في التحليل: {str(e)}"
+        }), 400
 
 @app.route('/status')
 def status():
     """Endpoint to check API status"""
     if time.time() - openai_last_check > 300:
         init_openai()
-    
+
     return jsonify({
         "server": "running",
         "openai_available": OPENAI_AVAILABLE,
