@@ -1,116 +1,167 @@
 import os
 import base64
+import re
 import requests
-import time
+import json
 from flask import Flask, request, jsonify
 from PIL import Image
 from io import BytesIO
-from datetime import datetime
+import time
+from datetime import datetime, timedelta
 
-# Initialize Flask
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5MB max
 
-# Session store (in-memory)
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
+
 analysis_sessions = {}
 
-# OpenAI client setup
 OPENAI_AVAILABLE = False
 client = None
 openai_error_message = ""
 openai_last_check = 0
 
-
 def init_openai():
-    """Initialize OpenAI client with error handling"""
     global OPENAI_AVAILABLE, client, openai_error_message, openai_last_check
+
     try:
         from openai import OpenAI
         api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
+
+        if not api_key or api_key == "your-api-key-here":
             openai_error_message = "OpenAI API key not configured"
             return False
 
         client = OpenAI(api_key=api_key)
 
-        # Quick test
-        models = client.models.list()
-        model_ids = [m.id for m in models.data]
-        if "gpt-4o" not in model_ids:
-            openai_error_message = "GPT-4o not available"
+        try:
+            models = client.models.list()
+            model_ids = [model.id for model in models.data]
+            if "gpt-4o" not in model_ids:
+                openai_error_message = "GPT-4o model not available in your account"
+                return False
+
+            OPENAI_AVAILABLE = True
+            openai_error_message = ""
+            openai_last_check = time.time()
+            return True
+
+        except Exception as e:
+            error_msg = str(e)
+            if "insufficient_quota" in error_msg:
+                openai_error_message = "Account has no API credits. Please add funds to your OpenAI API account."
+            elif "invalid_api_key" in error_msg:
+                openai_error_message = "Invalid API key. Please check your OPENAI_API_KEY environment variable."
+            else:
+                openai_error_message = f"OpenAI API test failed: {error_msg}"
             return False
 
-        OPENAI_AVAILABLE = True
-        openai_error_message = ""
-        openai_last_check = time.time()
-        return True
+    except ImportError:
+        openai_error_message = "OpenAI package not installed"
+        return False
     except Exception as e:
-        openai_error_message = f"OpenAI init error: {str(e)}"
+        openai_error_message = f"OpenAI initialization error: {str(e)}"
         return False
 
-
-# Init once at startup
 init_openai()
 
+def split_long_message(message, max_length=2000):
+    """
+    تقسيم الرسالة الطويلة إلى أجزاء، مع مراعاة حدود SendPulse
+    """
+    # إذا كان النص أقصر من الحد الأقصى، أرجعه كما هو
+    if len(message) <= max_length:
+        return message
+    
+    # إذا كان أطول، قسّمه إلى أجزاء
+    parts = []
+    while message:
+        if len(message) <= max_length:
+            parts.append(message)
+            break
+        
+        split_index = message.rfind('\n', 0, max_length)
+        if split_index == -1:
+            split_index = message.rfind('. ', 0, max_length)
+        if split_index == -1:
+            split_index = message.rfind(' ', 0, max_length)
+        if split_index == -1:
+            split_index = max_length
+            
+        part = message[:split_index].strip()
+        if part:
+            parts.append(part)
+        message = message[split_index:].strip()
+    
+    return parts
 
-def split_text_for_telegram(text, limit=3500):
-    """Split long analysis into chunks safe for Telegram/SendPulse"""
-    chunks = []
-    while len(text) > limit:
-        split_at = text.rfind("\n", 0, limit)
-        if split_at == -1:
-            split_at = limit
-        chunks.append(text[:split_at])
-        text = text[split_at:]
-    chunks.append(text)
-    return chunks
+def is_complete_response(response_text):
+    if not response_text or len(response_text.strip()) < 150:
+        return False
+    
+    last_char = response_text.strip()[-1]
+    if last_char not in ['.', '!', '?', ':', ';', '،', ')', ']', '}']:
+        return False
+    
+    incomplete_patterns = [
+        r'\(Stop-L', r'\(Take-P', r'\(SL', r'\(TP', 
+        r'إيقاف الخسارة', r'وقف الخسارة', r'أخذ الربح',
+        r'...', r'…', r'\.\.\.'
+    ]
+    
+    for pattern in incomplete_patterns:
+        if re.search(pattern, response_text[-20:]):
+            return False
+    
+    key_sections = ['الاتجاه', 'الدعم', 'المقاومة', 'الدخول', 'الخروج', 'المخاطر']
+    found_sections = sum(1 for section in key_sections if section in response_text)
+    
+    return found_sections >= 4
 
-
-def analyze_with_openai(image_str, image_format, timeframe=None, previous_analysis=None, mode="pro"):
-    """Analyze image with OpenAI with enhanced prompts"""
-
-    if mode == "student":
-        analysis_prompt = """
-أنت مدرب تحليل فني، مهمتك شرح الشارت لطلاب مبتدئين.
-استخدم لغة مبسطة، خطوة بخطوة:
-1. ما الذي نراه على الشارت (اتجاه صاعد/هابط)
-2. أهم الدعوم والمقاومات
-3. نموذج فني أو شمعة مهمة
-4. ماذا يعني هذا للمتداول؟
-5. نصيحة قصيرة
-
-تجنب المصطلحات المعقدة. اجعل الإجابة تعليمية وواضحة.
-"""
-    elif timeframe == "H4" and previous_analysis:
+def analyze_with_openai(image_str, image_format, timeframe=None, previous_analysis=None):
+    if timeframe == "H4" and previous_analysis:
         analysis_prompt = f"""
-بناءً على تحليل 15 دقيقة السابق:
+أنت محلل فني محترف. قدم تحليلاً واضحاً وشاملاً للشارت المعروض للإطار 4 ساعات.
+
+بناءً على التحليل السابق للإطار 15 دقيقة:
 {previous_analysis}
 
-الآن قم بتحليل شارت 4 ساعات باستخدام Smart Money Concepts (SMC) ومستويات فيبوناتشي:
-- Order Blocks
-- Liquidity Zones
-- Market Structure Shifts
-- Fibonacci Retracements/Extensions
-ثم قدّم توصية استراتيجية شاملة مبسطة.
+ركز على النقاط التالية في تحليلك:
+1. تحليل الاتجاه العام وهيكل السوق
+2. تحديد مستويات الدعم والمقاومة الرئيسية
+3. تحليل مؤشر RSI والمتوسطات المتحركة
+4. تحديد مناطق الدخول والخروج المحتملة
+5. إدارة المخاطر ونسب المكافأة إلى المخاطرة
+
+**ملاحظة مهمة**: يجب أن يكون تحليلك مكتملاً ولا ينقطع فجأة. تأكد من إنهاء جميع الجمل بشكل صحيح.
 """
     else:
         analysis_prompt = """
-أنت محلل فني محترف متخصص في تحليل شارتات التداول.
-حدد:
-- الاتجاه العام
-- الدعوم والمقاومات
-- نموذج أو مؤشر فني واضح
-- استراتيجية تداول محتملة
+أنت محلل فني محترف. قدم تحليلاً واضحاً وشاملاً للشارت المعروض للإطار 15 دقيقة.
+
+ركز على النقاط التالية في تحليلك:
+1. تحليل الاتجاه العام وهيكل السوق
+2. تحديد مستويات الدعم والمقاومة الرئيسية
+3. تحليل مؤشر RSI إذا كان مرئياً
+4. تحديد مناطق الدخول والخروج المحتملة
+5. إدارة المخاطر الأساسية
+
+**ملاحظة مهمة**: يجب أن يكون تحليلك مكتملاً ولا ينقطع فجأة. تأكد من إنهاء جميع الجمل بشكل صحيح.
 """
 
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
-            {"role": "system", "content": "أنت محلل فني محترف للأسواق المالية."},
+            {
+                "role": "system",
+                "content": "أنت محلل فني محترف. قدم تحليلاً دقيقاً وعملياً بلغة واضحة. تأكد من إكمال جميع أقسام التحليل وعدم قطع الرد فجأة. ركز على الجوانب العملية للتداول."
+            },
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": analysis_prompt},
+                    {
+                        "type": "text",
+                        "text": analysis_prompt
+                    },
                     {
                         "type": "image_url",
                         "image_url": {
@@ -121,122 +172,186 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
                 ]
             }
         ],
-        max_tokens=4000,
-        temperature=0.6
+        max_tokens=3000,
+        temperature=0.7
     )
 
-    full_text = response.choices[0].message.content.strip()
-    return split_text_for_telegram(full_text)
-
+    return response.choices[0].message.content.strip()
 
 @app.route('/')
 def home():
     status = "✅" if OPENAI_AVAILABLE else "❌"
     return f"XFLEXAI Server is running {status} - OpenAI: {'Available' if OPENAI_AVAILABLE else openai_error_message}"
 
-
-@app.route('/sendpulse-analyze', methods=['POST'])
-def sendpulse_analyze():
-    """
-    Unified endpoint:
-    - Accepts multipart/form-data (file upload)
-    - Accepts JSON with image_url
-    """
+@app.route('/multi-timeframe-analyze', methods=['POST'])
+def multi_timeframe_analyze():
     try:
-        user_id = request.form.get('user_id') or request.json.get('user_id') if request.is_json else "default_user"
-        timeframe = request.form.get('timeframe') or (request.json.get('timeframe') if request.is_json else None)
-        mode = request.form.get('mode') or (request.json.get('mode') if request.is_json else "pro")
+        if not request.is_json:
+            return jsonify({
+                "message": "نوع المحتوى غير مدعوم",
+                "analysis": "فشل في التحليل: يجب أن يكون الطلب بتنسيق JSON"
+            }), 415
 
-        # --- Case 1: File Upload ---
-        if 'file' in request.files:
-            file = request.files['file']
-            img = Image.open(file.stream)
-        else:
-            # --- Case 2: JSON image_url ---
-            data = request.get_json()
-            if not data or not data.get("image_url"):
-                return jsonify({"error": "No file or image_url provided"}), 400
-            response = requests.get(data["image_url"], timeout=10)
-            if response.status_code != 200:
-                return jsonify({"error": "Failed to download image"}), 400
-            img = Image.open(BytesIO(response.content))
+        data = request.get_json()
 
-        if img.format not in ['PNG', 'JPEG', 'JPG']:
-            return jsonify({"error": "Unsupported format"}), 400
+        if not data:
+            return jsonify({
+                "message": "لم يتم إرسال بيانات",
+                "analysis": "فشل في التحليل: لم يتم إرسال بيانات"
+            }), 400
 
-        if not OPENAI_AVAILABLE:
-            return jsonify({"error": openai_error_message}), 503
+        user_id = data.get('user_id', 'default_user')
+        image_url = data.get('last_message') or data.get('image_url')
+        timeframe = data.get('timeframe')
+        format_for_sendpulse = data.get('format_for_sendpulse', True)  # إضافة خيار للتنسيق
 
-        # Convert image to base64
-        buffered = BytesIO()
-        img.save(buffered, format=img.format)
-        img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+        if not image_url:
+            return jsonify({
+                "message": "لم يتم تقديم رابط الصورة",
+                "analysis": "فشل في التحليل: لم يتم تقديم رابط الصورة"
+            }), 400
 
-        # Session init
         if user_id not in analysis_sessions:
             analysis_sessions[user_id] = {
-                "m15_analysis": None,
-                "h4_analysis": None,
-                "created_at": datetime.now(),
-                "status": "awaiting_m15"
+                'm15_analysis': None,
+                'h4_analysis': None,
+                'created_at': datetime.now(),
+                'status': 'awaiting_m15'
             }
 
         session = analysis_sessions[user_id]
 
-        if session["status"] == "awaiting_m15" or not timeframe:
-            # First image (M15)
-            analysis_chunks = analyze_with_openai(img_str, img.format, "M15", mode=mode)
-            session["m15_analysis"] = "\n".join(analysis_chunks)
-            session["status"] = "awaiting_h4"
+        response = requests.get(image_url, timeout=10)
+        if response.status_code != 200:
+            return jsonify({
+                "message": "تعذر تحميل الصورة",
+                "analysis": "فشل في التحليل: تعذر تحميل الصورة"
+            }), 400
+
+        img = Image.open(BytesIO(response.content))
+
+        if img.format not in ['PNG', 'JPEG', 'JPG']:
+            return jsonify({
+                "message": "نوع الملف غير مدعوم",
+                "analysis": "فشل في التحليل: نوع الملف غير مدعوم"
+            }), 400
+
+        if not OPENAI_AVAILABLE:
+            return jsonify({
+                "message": "خدمة الذكاء الاصطناعي غير متوفرة",
+                "analysis": f"فشل في التحليل: {openai_error_message}"
+            }), 503
+
+        buffered = BytesIO()
+        img_format = img.format if img.format else 'JPEG'
+        img.save(buffered, format=img_format)
+        img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+
+        if session['status'] == 'awaiting_m15' or not timeframe:
+            analysis = analyze_with_openai(img_str, img_format, "M15")
+            
+            if not is_complete_response(analysis):
+                incomplete_sections = []
+                if 'المخاطر' not in analysis or 'إيقاف الخسارة' not in analysis:
+                    incomplete_sections.append("إدارة المخاطر")
+                if 'الدخول' not in analysis or 'الخروج' not in analysis:
+                    incomplete_sections.append("نقاط الدخول والخروج")
+                
+                if incomplete_sections:
+                    completion_note = f"\n\n⚠️ ملاحظة: التحليل غير مكتمل في قسم {', '.join(incomplete_sections)}. يوصى بمراجعة هذه النقاط يدوياً."
+                    analysis += completion_note
+                
+            session['m15_analysis'] = analysis
+            session['status'] = 'awaiting_h4'
+
+            # تقسيم الرد مع مراعاة SendPulse
+            analysis_chunks = split_long_message(analysis)
+            
+            # إذا طلبنا تنسيق SendPulse وكانت النتيجة قائمة، ندمجها
+            if format_for_sendpulse and isinstance(analysis_chunks, list):
+                analysis_response = "\n\n".join(analysis_chunks)
+            else:
+                analysis_response = analysis_chunks
 
             return jsonify({
-                "message": "✅ M15 chart analyzed",
-                "analysis_chunks": analysis_chunks,
-                "next_step": "Please send H4 chart",
-                "status": "awaiting_h4"
+                "message": "✅ تم تحليل الشارت 15 دقيقة بنجاح",
+                "analysis": analysis_response,
+                "next_step": "الرجاء إرسال صورة الإطار 4 ساعات للتحليل المتكامل",
+                "status": "awaiting_h4",
+                "user_id": user_id
             }), 200
 
-        elif session["status"] == "awaiting_h4" and timeframe == "H4":
-            # Second image (H4)
-            analysis_chunks = analyze_with_openai(img_str, img.format, "H4", previous_analysis=session["m15_analysis"], mode=mode)
-            session["h4_analysis"] = "\n".join(analysis_chunks)
-            session["status"] = "completed"
+        elif session['status'] == 'awaiting_h4' and timeframe == "H4":
+            analysis = analyze_with_openai(img_str, img_format, "H4", session['m15_analysis'])
+            
+            if not is_complete_response(analysis):
+                incomplete_sections = []
+                if 'المخاطر' not in analysis or 'إيقاف الخسارة' not in analysis:
+                    incomplete_sections.append("إدارة المخاطر")
+                if 'الدخول' not in analysis or 'الخروج' not in analysis:
+                    incomplete_sections.append("نقاط الدخول والخروج")
+                
+                if incomplete_sections:
+                    completion_note = f"\n\n⚠️ ملاحظة: التحليل غير مكتمل في قسم {', '.join(incomplete_sections)}. يوصى بمراجعة هذه النقاط يدوياً."
+                    analysis += completion_note
+                
+            session['h4_analysis'] = analysis
+            session['status'] = 'completed'
 
             final_analysis = f"""
-## 📊 التحليل المتكامل
+## 📊 التحليل الشامل متعدد الأطر الزمنية
 
-### ⏱️ M15:
+### 📈 تحليل الإطار 15 دقيقة:
 {session['m15_analysis']}
 
-### 🕓 H4:
-{session['h4_analysis']}
+### 🕓 تحليل الإطار 4 ساعات:
+{analysis}
 
-🎯 التوصية النهائية:
-- نقاط دخول وخروج
-- إدارة المخاطرة
-- أهداف ربح محتملة
+### 🎯 التوصية الاستراتيجية النهائية:
+بناءً على التحليل المتكامل للإطارين، يتم تقديم التوصيات التالية:
+- نقاط الدخول المثلى
+- إدارة المخاطرة المناسبة
+- أهداف الربح المحتملة
 """
 
-            # Cleanup
+            # تقسيم الرد النهائي مع مراعاة SendPulse
+            final_analysis_chunks = split_long_message(final_analysis)
+            
+            # إذا طلبنا تنسيق SendPulse وكانت النتيجة قائمة، ندمجها
+            if format_for_sendpulse and isinstance(final_analysis_chunks, list):
+                final_analysis_response = "\n\n".join(final_analysis_chunks)
+            else:
+                final_analysis_response = final_analysis_chunks
+
             del analysis_sessions[user_id]
 
             return jsonify({
-                "message": "✅ Full multi-timeframe analysis complete",
-                "analysis_chunks": split_text_for_telegram(final_analysis),
+                "message": "✅ تم التحليل الشامل بنجاح",
+                "analysis": final_analysis_response,
                 "status": "completed"
             }), 200
 
         else:
-            return jsonify({"error": "Wrong sequence. Start with M15 first."}), 400
+            return jsonify({
+                "message": "خطأ في تسلسل التحليل",
+                "analysis": "الرجاء البدء بإرسال صورة الإطار 15 دقيقة أولاً"
+            }), 400
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "message": f"خطأ أثناء المعالجة: {str(e)}",
+            "analysis": f"فشل في التحليل: {str(e)}"
+        }), 400
 
+@app.route('/sendpulse-analyze', methods=['POST'])
+def sendpulse_analyze():
+    return multi_timeframe_analyze()
 
 @app.route('/status')
 def status():
     if time.time() - openai_last_check > 300:
         init_openai()
+
     return jsonify({
         "server": "running",
         "openai_available": OPENAI_AVAILABLE,
@@ -245,15 +360,16 @@ def status():
         "timestamp": time.time()
     })
 
-
 @app.route('/clear-sessions')
 def clear_sessions():
+    global analysis_sessions
     count = len(analysis_sessions)
-    analysis_sessions.clear()
-    return jsonify({"message": f"Cleared {count} sessions"})
-
+    analysis_sessions = {}
+    return jsonify({
+        "message": f"تم مسح {count} جلسة",
+        "status": "sessions_cleared"
+    })
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
