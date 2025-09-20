@@ -9,23 +9,18 @@ from io import BytesIO
 import time
 from datetime import datetime, timedelta
 
-# تهيئة Flask
 app = Flask(__name__)
 
-# تحديد حجم أقصى للرفع (5MB)
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
 
-# تخزين مؤقت للتحليلات (في production استخدم Redis أو قاعدة بيانات)
 analysis_sessions = {}
 
-# تهيئة OpenAI Client
 OPENAI_AVAILABLE = False
 client = None
 openai_error_message = ""
 openai_last_check = 0
 
 def init_openai():
-    """Initialize OpenAI client with error handling"""
     global OPENAI_AVAILABLE, client, openai_error_message, openai_last_check
 
     try:
@@ -38,10 +33,8 @@ def init_openai():
 
         client = OpenAI(api_key=api_key)
 
-        # Test the API with a simple request
         try:
             models = client.models.list()
-            # Check if gpt-4o is available
             model_ids = [model.id for model in models.data]
             if "gpt-4o" not in model_ids:
                 openai_error_message = "GPT-4o model not available in your account"
@@ -69,20 +62,16 @@ def init_openai():
         openai_error_message = f"OpenAI initialization error: {str(e)}"
         return False
 
-# Initialize OpenAI on startup
 init_openai()
 
-[Odef is_complete_response(response_text):
-    """Check if the response seems complete with more precise criteria"""
-    if not response_text or len(response_text.strip()) < 150:  # Increased minimum length
+def is_complete_response(response_text):
+    if not response_text or len(response_text.strip()) < 150:
         return False
     
-    # Check if the response ends with a complete sentence
     last_char = response_text.strip()[-1]
     if last_char not in ['.', '!', '?', ':', ';', '،', ')', ']', '}']:
         return False
     
-    # Check for specific incomplete patterns
     incomplete_patterns = [
         r'\(Stop-L', r'\(Take-P', r'\(SL', r'\(TP', 
         r'إيقاف الخسارة', r'وقف الخسارة', r'أخذ الربح',
@@ -90,18 +79,15 @@ init_openai()
     ]
     
     for pattern in incomplete_patterns:
-        if re.search(pattern, response_text[-20:]):  # Check last 20 characters
+        if re.search(pattern, response_text[-20:]):
             return False
     
-    # Check if all key sections are present
     key_sections = ['الاتجاه', 'الدعم', 'المقاومة', 'الدخول', 'الخروج', 'المخاطر']
     found_sections = sum(1 for section in key_sections if section in response_text)
     
-    return found_sections >= 4  # At least 4 out of 6 key sections
+    return found_sections >= 4
 
 def analyze_with_openai(image_str, image_format, timeframe=None, previous_analysis=None):
-    """Analyze image with OpenAI with enhanced prompt to avoid truncation"""
-    
     if timeframe == "H4" and previous_analysis:
         analysis_prompt = f"""
 أنت محلل فني محترف. قدم تحليلاً واضحاً وشاملاً للشارت المعروض للإطار 4 ساعات.
@@ -156,7 +142,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
                 ]
             }
         ],
-        max_tokens=3000,  # Reduced to avoid excessive token usage
+        max_tokens=3000,
         temperature=0.7
     )
 
@@ -167,12 +153,8 @@ def home():
     status = "✅" if OPENAI_AVAILABLE else "❌"
     return f"XFLEXAI Server is running {status} - OpenAI: {'Available' if OPENAI_AVAILABLE else openai_error_message}"
 
-# New endpoint for multi-timeframe analysis
 @app.route('/multi-timeframe-analyze', methods=['POST'])
 def multi_timeframe_analyze():
-    """
-    Handle multi-timeframe analysis with session management
-    """
     try:
         data = request.get_json()
 
@@ -192,7 +174,6 @@ def multi_timeframe_analyze():
                 "analysis": "فشل في التحليل: لم يتم تقديم رابط الصورة"
             }), 400
 
-        # Initialize user session if not exists
         if user_id not in analysis_sessions:
             analysis_sessions[user_id] = {
                 'm15_analysis': None,
@@ -203,7 +184,6 @@ def multi_timeframe_analyze():
 
         session = analysis_sessions[user_id]
 
-        # Download and process image
         response = requests.get(image_url, timeout=10)
         if response.status_code != 200:
             return jsonify({
@@ -225,20 +205,15 @@ def multi_timeframe_analyze():
                 "analysis": f"فشل في التحليل: {openai_error_message}"
             }), 503
 
-        # Convert image to base64
         buffered = BytesIO()
         img_format = img.format if img.format else 'JPEG'
         img.save(buffered, format=img_format)
         img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
 
-        # Determine which analysis to perform
         if session['status'] == 'awaiting_m15' or not timeframe:
-            # First image - assume M15
             analysis = analyze_with_openai(img_str, img_format, "M15")
             
-            # Check if response is complete
             if not is_complete_response(analysis):
-                # Instead of retrying, add a note about incomplete sections
                 incomplete_sections = []
                 if 'المخاطر' not in analysis or 'إيقاف الخسارة' not in analysis:
                     incomplete_sections.append("إدارة المخاطر")
@@ -261,12 +236,9 @@ def multi_timeframe_analyze():
             }), 200
 
         elif session['status'] == 'awaiting_h4' and timeframe == "H4":
-            # Second image - H4 with comprehensive analysis
             analysis = analyze_with_openai(img_str, img_format, "H4", session['m15_analysis'])
             
-            # Check if response is complete
             if not is_complete_response(analysis):
-                # Instead of retrying, add a note about incomplete sections
                 incomplete_sections = []
                 if 'المخاطر' not in analysis or 'إيقاف الخسارة' not in analysis:
                     incomplete_sections.append("إدارة المخاطر")
@@ -280,7 +252,6 @@ def multi_timeframe_analyze():
             session['h4_analysis'] = analysis
             session['status'] = 'completed'
 
-            # Prepare final comprehensive analysis
             final_analysis = f"""
 ## 📊 التحليل الشامل متعدد الأطر الزمنية
 
@@ -297,7 +268,6 @@ def multi_timeframe_analyze():
 - أهداف الربح المحتملة
 """
 
-            # Clean up session after completion
             del analysis_sessions[user_id]
 
             return jsonify({
@@ -318,17 +288,12 @@ def multi_timeframe_analyze():
             "analysis": f"فشل في التحليل: {str(e)}"
         }), 400
 
-# Keep the original endpoint for backward compatibility
 @app.route('/sendpulse-analyze', methods=['POST'])
 def sendpulse_analyze():
-    """
-    Backward compatibility endpoint - redirects to multi-timeframe analysis
-    """
     return multi_timeframe_analyze()
 
 @app.route('/status')
 def status():
-    """Endpoint to check API status"""
     if time.time() - openai_last_check > 300:
         init_openai()
 
@@ -342,7 +307,6 @@ def status():
 
 @app.route('/clear-sessions')
 def clear_sessions():
-    """Clear all analysis sessions (for debugging)"""
     global analysis_sessions
     count = len(analysis_sessions)
     analysis_sessions = {}
