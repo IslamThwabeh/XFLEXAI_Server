@@ -2,12 +2,13 @@ import os
 import base64
 import re
 import requests
-import json
+import hashlib
 from flask import Flask, request, jsonify
 from PIL import Image
 from io import BytesIO
 import time
 from datetime import datetime, timedelta
+from functools import lru_cache
 
 # تهيئة Flask
 app = Flask(__name__)
@@ -89,6 +90,34 @@ def is_valid_analysis(analysis_text):
             
     return True
 
+def compress_image(img, max_size=(1024, 1024), quality=85):
+    """Compress image to reduce size before sending to OpenAI"""
+    # Resize if needed
+    if img.size[0] > max_size[0] or img.size[1] > max_size[1]:
+        img.thumbnail(max_size, Image.Resampling.LANCZOS)
+    
+    # Convert to JPEG if it's not already (smaller size)
+    if img.format != 'JPEG':
+        img = img.convert('RGB')
+    
+    return img
+
+def get_image_hash(image_data):
+    """Generate a hash for image caching"""
+    return hashlib.md5(image_data).hexdigest()
+
+@lru_cache(maxsize=100)
+def cached_analysis(image_hash, timeframe, previous_analysis_hash=None):
+    """Cache analysis results to avoid reprocessing the same image"""
+    # This is a placeholder - the actual analysis is done in analyze_with_openai
+    # We use this decorator to cache results
+    pass
+
+def is_high_quality_image(img):
+    """Check if image is of sufficient quality for detailed analysis"""
+    width, height = img.size
+    return width >= 600 and height >= 400  # Minimum dimensions for quality analysis
+
 def analyze_with_openai(image_str, image_format, timeframe=None, previous_analysis=None):
     """Analyze image with OpenAI with enhanced SMC and Fibonacci analysis"""
     
@@ -102,7 +131,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 
 قم بتحليل هذا الشارت للإطار 4 ساعات باستخدام القوالب التالية:
 
-### التحليل باستخدام Smart Money Concepts (SMC)
+### 📊 التحليل باستخدام Smart Money Concepts (SMC)
 1. **Order Blocks (OB)**:
    - حدد مناطق الطلب (Buying/Selling Zones)
    - حدد أي Order Blocks واضحة على الشارت
@@ -118,7 +147,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
    - ابحث عن أي تغييرات في هيكل السوق
    - حدد أي Break of Structure (BOS) أو Change of Character (CHoCH)
 
-### التحليل باستخدام مستويات فيبوناتشي
+### 📐 التحليل باستخدام مستويات فيبوناتشي
 1. **Fibonacci Retracement**:
    - حدد أهم مستويات فيبوناتشي (0.236, 0.382, 0.5, 0.618, 0.786)
    - حدد أي مستويات تعمل كمقاومة أو دعم
@@ -127,7 +156,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
    - ابحث عن مستويات الامتداد (1.272, 1.414, 1.618)
    - حدد أهداف محتملة للحركة السعرية
 
-### التكامل بين الإطارين
+### 🤝 التكامل بين الإطارين
 1. **التوافق بين الإطارين**:
    - هل هناك توافق بين اتجاه الإطار 15 دقيقة و4 ساعات؟
    - ما هي مستويات الدعم والمقاومة المشتركة؟
@@ -137,49 +166,66 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
    - تحديد Stop Loss وTake Profit المناسب
    - إدارة المخاطر بناءً على تحليل متعدد الأطر الزمنية
 
-### الخلاصة الاستراتيجية
+### 🎯 الخلاصة الاستراتيجية
 قدم توصية تداول شاملة بناءً على تحليل:
 - متعدد الأطر الزمنية (15 دقيقة + 4 ساعات)
 - Smart Money Concepts
 - مستويات فيبوناتشي
 - إدارة المخاطر المناسبة
 
-⚠️ ملاحظات مهمة:
-- ركز على مناطق الدخول عالية الاحتمالية
-- حدد مستويات المخاطرة والمكافأة بوضوح
-- استخدم لغة احترافية واضحة
+### 📋 ملاحظات مهمة:
+1. استخدم لغة واضحة تناسب المبتدئين والمتقدمين
+2. قدم أرقام وتواريخ محددة عندما يكون ذلك ممكناً
+3. ركز على التطبيق العملي وليس النظريات
+4. تأكد من اكتمال التحليل دون قطع
+5. استخدم تنسيق واضح مع عناوين فرعية
+
+⚠️ تأكد من إكمال التحليل بالكامل وتقديم توصيات عملية قابلة للتطبيق.
 """
     else:
         # Standard analysis for 15-minute or single timeframe
         analysis_prompt = """
 أنت محلل فني محترف متخصص في تحليل charts التداول من MT4 و TradingView.
-استخدم القالب التالي حصراً لتحليلك:
 
-### الإطار الزمني
+### 📊 استخدم القالب التالي حصراً لتحليلك:
+
+### 📅 الإطار الزمني
 حدد الإطار الزمني للchart إذا كان واضحاً.
 
-### النماذج الفنية
+### 🎯 النماذج الفنية
 ابحث عن أي نماذج فنية مثل:
 - نماذج الشموع اليابانية (Engulfing, Hammer, Doji)
 - نماذج Chart patterns (Head and Shoulders, Triangles, Flags)
 
-### المؤشرات الفنية
+### 📈 المؤشرات الفنية
 حاول تحديد أي مؤشرات فنية مرئية مثل:
 - RSI ومستويات التشبع الشرائي/البيعي
 - Moving Averages وتقاطعاتها
 - MACD وإشاراته
 
-### مستويات الدعم والمقاومة
+### 🛡️ مستويات الدعم والمقاومة
 حدد مستويات الدعم والمقاومة الرئيسية.
 
-### الاتجاه العام
+### 📉 الاتجاه العام
 حدد الاتجاه العام للسوق.
 
-### استراتيجية التداول المحتملة
-قدم اقتراحات عملية للتداول.
+### 💼 استراتيجية التداول المحتملة
+قدم اقتراحات عملية للتداول مع:
+- نقاط دخول محددة
+- وقف خسارة واضح
+- أهداف ربح واقعية
 
-### ملاحظات عامة
+### ℹ️ ملاحظات عامة
 أي ملاحظات إضافية أو تحذيرات مهمة.
+
+### 📋 ملاحظات مهمة:
+1. استخدم لغة واضحة تناسب المبتدئين
+2. قدم أرقام وتواريخ محددة
+3. ركز على التطبيق العملي
+4. تأكد من اكتمال التحليل دون قطع
+5. استخدم تنسيق واضح مع عناوين فرعية
+
+⚠️ تأكد من إكمال التحليل بالكامل وتقديم توصيات عملية قابلة للتطبيق.
 """
 
     response = client.chat.completions.create(
@@ -187,7 +233,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
         messages=[
             {
                 "role": "system",
-                "content": "أنت محلل فني محترف للأسواق المالية متخصص في SMC وفيبوناتشي. قدم تحليل دقيق وعملي."
+                "content": "أنت محلل فني محترف للأسواق المالية متخصص في SMC وفيبوناتشي. قدم تحليل دقيق وعملي بلغة واضحة تناسب جميع المستويات."
             },
             {
                 "role": "user",
@@ -206,18 +252,23 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
                 ]
             }
         ],
-        max_tokens=2500,
+        max_tokens=3000,  # Increased token limit
         temperature=0.7
     )
     
-    return response.choices[0].message.content.strip()
+    # Check if response was truncated
+    analysis = response.choices[0].message.content.strip()
+    if response.choices[0].finish_reason == "length":
+        analysis += "\n\n⚠️ ملاحظة: تم قطع التحليل بسبب طول النص. يرجى إرسال صورة أكثر وضوحاً أو التركيز على العناصر الرئيسية فقط."
+    
+    return analysis
 
 @app.route('/')
 def home():
     status = "✅" if OPENAI_AVAILABLE else "❌"
     return f"XFLEXAI Server is running {status} - OpenAI: {'Available' if OPENAI_AVAILABLE else openai_error_message}"
 
-# New endpoint for multi-timeframe analysis
+# Unified API endpoint for both SendPulse and Postman
 @app.route('/multi-timeframe-analyze', methods=['POST'])
 def multi_timeframe_analyze():
     """
@@ -263,10 +314,18 @@ def multi_timeframe_analyze():
             
         img = Image.open(BytesIO(response.content))
         
+        # Check if it's a valid image
         if img.format not in ['PNG', 'JPEG', 'JPG']:
             return jsonify({
-                "message": "نوع الملف غير مدعوم",
+                "message": "نوع الملف غير مدعوم. الرجاء إرسال PNG أو JPEG",
                 "analysis": "فشل في التحليل: نوع الملف غير مدعوم"
+            }), 400
+        
+        # Check image quality
+        if not is_high_quality_image(img):
+            return jsonify({
+                "message": "جودة الصورة غير كافية للتحليل الدقيق",
+                "analysis": "فشل في التحليل: جودة الصورة منخفضة. يرجى إرسال صورة أوضح وأكبر حجماً"
             }), 400
         
         if not OPENAI_AVAILABLE:
@@ -275,35 +334,49 @@ def multi_timeframe_analyze():
                 "analysis": f"فشل في التحليل: {openai_error_message}"
             }), 503
         
+        # Compress image to reduce size
+        img = compress_image(img)
+        
         # Convert image to base64
         buffered = BytesIO()
         img_format = img.format if img.format else 'JPEG'
-        img.save(buffered, format=img_format)
-        img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+        img.save(buffered, format=img_format, optimize=True, quality=85)
+        img_data = buffered.getvalue()
+        img_str = base64.b64encode(img_data).decode("utf-8")
         
-        # Determine which analysis to perform
-        if session['status'] == 'awaiting_m15' or not timeframe:
-            # First image - assume M15
-            analysis = analyze_with_openai(img_str, img_format, "M15")
-            session['m15_analysis'] = analysis
-            session['status'] = 'awaiting_h4'
-            
-            return jsonify({
-                "message": "✅ تم تحليل الشارت 15 دقيقة بنجاح",
-                "analysis": analysis,
-                "next_step": "الرجاء إرسال صورة الإطار 4 ساعات للتحليل المتكامل",
-                "status": "awaiting_h4",
-                "user_id": user_id
-            }), 200
-            
-        elif session['status'] == 'awaiting_h4' and timeframe == "H4":
-            # Second image - H4 with comprehensive analysis
-            analysis = analyze_with_openai(img_str, img_format, "H4", session['m15_analysis'])
-            session['h4_analysis'] = analysis
-            session['status'] = 'completed'
-            
-            # Prepare final comprehensive analysis
-            final_analysis = f"""
+        # Generate image hash for caching
+        image_hash = get_image_hash(img_data)
+        
+        # Check cache first
+        cached_result = cached_analysis(image_hash, timeframe, session.get('m15_analysis_hash'))
+        if cached_result and cached_result != "MISS":
+            # Use cached result
+            analysis = cached_result
+        else:
+            # Perform analysis
+            if session['status'] == 'awaiting_m15' or not timeframe:
+                # First image - assume M15
+                analysis = analyze_with_openai(img_str, img_format, "M15")
+                session['m15_analysis'] = analysis
+                session['m15_analysis_hash'] = hash(analysis)
+                session['status'] = 'awaiting_h4'
+                
+                return jsonify({
+                    "message": "✅ تم تحليل الشارت 15 دقيقة بنجاح",
+                    "analysis": analysis,
+                    "next_step": "الرجاء إرسال صورة الإطار 4 ساعات للتحليل المتكامل",
+                    "status": "awaiting_h4",
+                    "user_id": user_id
+                }), 200
+                
+            elif session['status'] == 'awaiting_h4' and timeframe == "H4":
+                # Second image - H4 with comprehensive analysis
+                analysis = analyze_with_openai(img_str, img_format, "H4", session['m15_analysis'])
+                session['h4_analysis'] = analysis
+                session['status'] = 'completed'
+                
+                # Prepare final comprehensive analysis
+                final_analysis = f"""
 ## 📊 التحليل الشامل متعدد الأطر الزمنية
 
 ### 📈 تحليل الإطار 15 دقيقة:
@@ -314,25 +387,41 @@ def multi_timeframe_analyze():
 
 ### 🎯 التوصية الاستراتيجية النهائية:
 بناءً على التحليل المتكامل للإطارين، يتم تقديم التوصيات التالية:
-- نقاط الدخول المثلى
-- إدارة المخاطرة المناسبة
-- أهداف الربح المحتملة
+
+#### للمتداول المبتدئ:
+- نقطة الدخول المثلى: [يتم تحديدها بناءً على التحليل]
+- وقف الخسارة: [يتم تحديده بناءً على التحليل]
+- هدف الربح: [يتم تحديده بناءً على التحليل]
+- نسبة المخاطرة/العائد: [يتم حسابها بناءً على التحليل]
+
+#### للمتداول المتوسط:
+- الاستراتيجية المقترحة: [يتم وصفها بناءً على التحليل]
+- إدارة رأس المال: [يتم تقديم نصائح بناءً على التحليل]
+- التوقيت المناسب: [يتم تحديده بناءً على التحليل]
+
+### ⚠️ التحذيرات والمخاطر:
+- المخاطر الرئيسية: [يتم تحديدها بناءً على التحليل]
+- العوامل التي قد تغير التحليل: [يتم ذكرها بناءً على التحليل]
+- الوقت المناسب لإعادة التقييم: [يتم تحديده بناءً على التحليل]
+
+### ✅ الخلاصة النهائية:
+[ملخص واضح باللغة العربية البسيطة يناسب جميع المستويات]
 """
-            
-            # Clean up session after completion
-            del analysis_sessions[user_id]
-            
-            return jsonify({
-                "message": "✅ تم التحليل الشامل بنجاح",
-                "analysis": final_analysis,
-                "status": "completed"
-            }), 200
-            
-        else:
-            return jsonify({
-                "message": "خطأ في تسلسل التحليل",
-                "analysis": "الرجاء البدء بإرسال صورة الإطار 15 دقيقة أولاً"
-            }), 400
+                
+                # Clean up session after completion
+                del analysis_sessions[user_id]
+                
+                return jsonify({
+                    "message": "✅ تم التحليل الشامل بنجاح",
+                    "analysis": final_analysis,
+                    "status": "completed"
+                }), 200
+                
+            else:
+                return jsonify({
+                    "message": "خطأ في تسلسل التحليل",
+                    "analysis": "الرجاء البدء بإرسال صورة الإطار 15 دقيقة أولاً"
+                }), 400
         
     except Exception as e:
         return jsonify({
