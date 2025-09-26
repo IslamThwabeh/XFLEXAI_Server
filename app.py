@@ -64,96 +64,59 @@ def init_openai():
 
 init_openai()
 
-def split_long_message(message, max_length=2000):
-    """
-    تقسيم الرسالة الطويلة إلى أجزاء، مع مراعاة حدود SendPulse
-    """
-    # إذا كان النص أقصر من الحد الأقصى، أرجعه كما هو
-    if len(message) <= max_length:
-        return message
-    
-    # إذا كان أطول، قسّمه إلى أجزاء
-    parts = []
-    while message:
-        if len(message) <= max_length:
-            parts.append(message)
-            break
-        
-        split_index = message.rfind('\n', 0, max_length)
-        if split_index == -1:
-            split_index = message.rfind('. ', 0, max_length)
-        if split_index == -1:
-            split_index = message.rfind(' ', 0, max_length)
-        if split_index == -1:
-            split_index = max_length
-            
-        part = message[:split_index].strip()
-        if part:
-            parts.append(part)
-        message = message[split_index:].strip()
-    
-    return parts
-
-def is_complete_response(response_text):
-    if not response_text or len(response_text.strip()) < 150:
-        return False
-    
-    last_char = response_text.strip()[-1]
-    if last_char not in ['.', '!', '?', ':', ';', '،', ')', ']', '}']:
-        return False
-    
-    incomplete_patterns = [
-        r'\(Stop-L', r'\(Take-P', r'\(SL', r'\(TP', 
-        r'إيقاف الخسارة', r'وقف الخسارة', r'أخذ الربح',
-        r'...', r'…', r'\.\.\.'
-    ]
-    
-    for pattern in incomplete_patterns:
-        if re.search(pattern, response_text[-20:]):
-            return False
-    
-    key_sections = ['الاتجاه', 'الدعم', 'المقاومة', 'الدخول', 'الخروج', 'المخاطر']
-    found_sections = sum(1 for section in key_sections if section in response_text)
-    
-    return found_sections >= 4
-
 def analyze_with_openai(image_str, image_format, timeframe=None, previous_analysis=None):
+    """تحليل الصورة مع إجبار OpenAI على الالتزام بعدد أحرف محدد"""
+    
+    # تحديد الحد الأقصى للأحرف بناءً على نوع التحليل
     if timeframe == "H4" and previous_analysis:
+        char_limit = 800  # للتحليل النهائي
         analysis_prompt = f"""
-أنت محلل فني محترف. قدم تحليلاً واضحاً وشاملاً للشارت المعروض للإطار 4 ساعات.
+أنت محلل فني محترف. قدم تحليلاً دقيقاً ومختصراً للغاية للشارت (4 ساعات).
 
-بناءً على التحليل السابق للإطار 15 دقيقة:
-{previous_analysis}
+التحليل السابق (15 دقيقة): {previous_analysis[:150]}...
 
-ركز على النقاط التالية في تحليلك:
-1. تحليل الاتجاه العام وهيكل السوق
-2. تحديد مستويات الدعم والمقاومة الرئيسية
-3. تحليل مؤشر RSI والمتوسطات المتحركة
-4. تحديد مناطق الدخول والخروج المحتملة
-5. إدارة المخاطر ونسب المكافأة إلى المخاطرة
+**التزم الصارم بالشروط التالية:**
+1. لا تتجاوز {char_limit} حرف تحت أي ظرف
+2. ركز على النقاط العملية فقط
+3. استخدم لغة مختصرة جداً
 
-**ملاحظة مهمة**: يجب أن يكون تحليلك مكتملاً ولا ينقطع فجأة. تأكد من إنهاء جميع الجمل بشكل صحيح.
+**المطلوب في 4 نقاط فقط:**
+1. الاتجاه العام (سطر واحد)
+2. أهم مستوى دعم ومقاومة (سطر واحد)
+3. توصية تداول واضحة (سطر واحد)
+4. إدارة المخاطرة (سطر واحد)
+
+**تأكد من عد الأحرف والالتزام بالحد {char_limit} حرف.**
 """
     else:
-        analysis_prompt = """
-أنت محلل فني محترف. قدم تحليلاً واضحاً وشاملاً للشارت المعروض للإطار 15 دقيقة.
+        char_limit = 600  # للتحليل الأولي
+        analysis_prompt = f"""
+أنت محلل فني محترف. قدم تحليلاً دقيقاً ومختصراً للغاية للشارت (15 دقيقة).
 
-ركز على النقاط التالية في تحليلك:
-1. تحليل الاتجاه العام وهيكل السوق
-2. تحديد مستويات الدعم والمقاومة الرئيسية
-3. تحليل مؤشر RSI إذا كان مرئياً
-4. تحديد مناطق الدخول والخروج المحتملة
-5. إدارة المخاطر الأساسية
+**التزم الصارم بالشروط التالية:**
+1. لا تتجاوز {char_limit} حرف تحت أي ظرف
+2. ركز على النقاط العملية فقط
+3. استخدم لغة مختصرة جداً
 
-**ملاحظة مهمة**: يجب أن يكون تحليلك مكتملاً ولا ينقطع فجأة. تأكد من إنهاء جميع الجمل بشكل صحيح.
+**المطلوب في 4 نقاط فقط:**
+1. الاتجاه العام (سطر واحد)
+2. أهم مستوى دعم ومقاومة (سطر واحد)
+3. توصية تداول واضحة (سطر واحد)
+4. إدارة المخاطرة (سطر واحد)
+
+**تأكد من عد الأحرف والالتزام بالحد {char_limit} حرف.**
 """
+
+    # حساب الـ tokens المناسبة بناءً على الحد الأقصى للأحرف
+    # في المتوسط، كل token عربي ≈ 2-3 حروف، لذا نأخذ هامشاً آمناً
+    max_tokens = char_limit // 2 + 50  # هامش إضافي
 
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
             {
                 "role": "system",
-                "content": "أنت محلل فني محترف. قدم تحليلاً دقيقاً وعملياً بلغة واضحة. تأكد من إكمال جميع أقسام التحليل وعدم قطع الرد فجأة. ركز على الجوانب العملية للتداول."
+                "content": f"أنت محلل فني محترف. التزم الصارم بعدم تجاوز {char_limit} حرف في ردك. استخدم لغة مختصرة جداً وركز على الجوهر."
             },
             {
                 "role": "user",
@@ -172,11 +135,44 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
                 ]
             }
         ],
-        max_tokens=3000,
+        max_tokens=max_tokens,  # تحديد صارم لـ tokens
         temperature=0.7
     )
 
-    return response.choices[0].message.content.strip()
+    analysis = response.choices[0].message.content.strip()
+    
+    # التحقق من التزام OpenAI بالحد (للأمان فقط)
+    if len(analysis) > char_limit + 100:  # هامش خطأ 100 حرف
+        # إذا تجاوز الحد بشكل كبير، نطلب إعادة تحليل مختصر
+        retry_prompt = f"""
+التحليل السابق كان طويلاً جداً ({len(analysis)} حرف). أعد كتابة التحليل التالي مع الالتزام بعدم تجاوز {char_limit} حرف:
+
+{analysis}
+
+**المطلوب:**
+- اختصر التحليل إلى {char_limit} حرف كحد أقصى
+- احذف أي معلومات غير ضرورية
+- ركز على الجوهر فقط
+"""
+        
+        retry_response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": f"اختصار النص إلى {char_limit} حرف كحد أقصى مع الحفاظ على المعنى."
+                },
+                {
+                    "role": "user",
+                    "content": retry_prompt
+                }
+            ],
+            max_tokens=max_tokens,
+            temperature=0.7
+        )
+        analysis = retry_response.choices[0].message.content.strip()
+    
+    return analysis
 
 @app.route('/')
 def home():
@@ -203,7 +199,6 @@ def multi_timeframe_analyze():
         user_id = data.get('user_id', 'default_user')
         image_url = data.get('last_message') or data.get('image_url')
         timeframe = data.get('timeframe')
-        format_for_sendpulse = data.get('format_for_sendpulse', True)  # إضافة خيار للتنسيق
 
         if not image_url:
             return jsonify({
@@ -211,16 +206,18 @@ def multi_timeframe_analyze():
                 "analysis": "فشل في التحليل: لم يتم تقديم رابط الصورة"
             }), 400
 
+        # تهيئة الجلسة
         if user_id not in analysis_sessions:
             analysis_sessions[user_id] = {
                 'm15_analysis': None,
                 'h4_analysis': None,
                 'created_at': datetime.now(),
-                'status': 'awaiting_m15'
+                'status': 'awaiting_first_image'
             }
 
         session = analysis_sessions[user_id]
 
+        # تحميل ومعالجة الصورة
         response = requests.get(image_url, timeout=10)
         if response.status_code != 200:
             return jsonify({
@@ -242,99 +239,97 @@ def multi_timeframe_analyze():
                 "analysis": f"فشل في التحليل: {openai_error_message}"
             }), 503
 
+        # تحويل الصورة إلى base64
         buffered = BytesIO()
         img_format = img.format if img.format else 'JPEG'
         img.save(buffered, format=img_format)
         img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
 
-        if session['status'] == 'awaiting_m15' or not timeframe:
-            analysis = analyze_with_openai(img_str, img_format, "M15")
-            
-            if not is_complete_response(analysis):
-                incomplete_sections = []
-                if 'المخاطر' not in analysis or 'إيقاف الخسارة' not in analysis:
-                    incomplete_sections.append("إدارة المخاطر")
-                if 'الدخول' not in analysis or 'الخروج' not in analysis:
-                    incomplete_sections.append("نقاط الدخول والخروج")
-                
-                if incomplete_sections:
-                    completion_note = f"\n\n⚠️ ملاحظة: التحليل غير مكتمل في قسم {', '.join(incomplete_sections)}. يوصى بمراجعة هذه النقاط يدوياً."
-                    analysis += completion_note
-                
-            session['m15_analysis'] = analysis
-            session['status'] = 'awaiting_h4'
-
-            # تقسيم الرد مع مراعاة SendPulse
-            analysis_chunks = split_long_message(analysis)
-            
-            # إذا طلبنا تنسيق SendPulse وكانت النتيجة قائمة، ندمجها
-            if format_for_sendpulse and isinstance(analysis_chunks, list):
-                analysis_response = "\n\n".join(analysis_chunks)
+        # تحديد نوع التحليل بناءً على الحالة الحالية
+        if session['status'] == 'awaiting_first_image':
+            # الصورة الأولى
+            if timeframe and timeframe.upper() in ['M15', 'H4']:
+                current_timeframe = timeframe.upper()
             else:
-                analysis_response = analysis_chunks
-
+                current_timeframe = 'M15'  # افتراضي
+            
+            analysis = analyze_with_openai(img_str, img_format, current_timeframe)
+            
+            if current_timeframe == 'M15':
+                session['m15_analysis'] = analysis
+                session['status'] = 'awaiting_h4'
+                next_step = "📈 الآن أرسل صورة الإطار 4 ساعات (H4) للإكمال"
+            else:
+                session['h4_analysis'] = analysis
+                session['status'] = 'awaiting_m15'
+                next_step = "📈 الآن أرسل صورة الإطار 15 دقيقة (M15) للإكمال"
+            
             return jsonify({
-                "message": "✅ تم تحليل الشارت 15 دقيقة بنجاح",
-                "analysis": analysis_response,
-                "next_step": "الرجاء إرسال صورة الإطار 4 ساعات للتحليل المتكامل",
-                "status": "awaiting_h4",
+                "message": f"✅ تم تحليل {current_timeframe} بنجاح",
+                "analysis": analysis,
+                "next_step": next_step,
+                "status": session['status'],
                 "user_id": user_id
             }), 200
 
-        elif session['status'] == 'awaiting_h4' and timeframe == "H4":
-            analysis = analyze_with_openai(img_str, img_format, "H4", session['m15_analysis'])
-            
-            if not is_complete_response(analysis):
-                incomplete_sections = []
-                if 'المخاطر' not in analysis or 'إيقاف الخسارة' not in analysis:
-                    incomplete_sections.append("إدارة المخاطر")
-                if 'الدخول' not in analysis or 'الخروج' not in analysis:
-                    incomplete_sections.append("نقاط الدخول والخروج")
-                
-                if incomplete_sections:
-                    completion_note = f"\n\n⚠️ ملاحظة: التحليل غير مكتمل في قسم {', '.join(incomplete_sections)}. يوصى بمراجعة هذه النقاط يدوياً."
-                    analysis += completion_note
-                
-            session['h4_analysis'] = analysis
+        elif session['status'] == 'awaiting_m15':
+            # الصورة الثانية - M15
+            analysis = analyze_with_openai(img_str, img_format, "M15", session.get('h4_analysis'))
+            session['m15_analysis'] = analysis
             session['status'] = 'completed'
 
-            final_analysis = f"""
-## 📊 التحليل الشامل متعدد الأطر الزمنية
+            # تحليل نهائي موجز جداً
+            final_analysis = f"""📊 **التحليل المتكامل:**
 
-### 📈 تحليل الإطار 15 دقيقة:
-{session['m15_analysis']}
+🕓 4 ساعات: {session['h4_analysis']}
 
-### 🕓 تحليل الإطار 4 ساعات:
-{analysis}
+⏱️ 15 دقيقة: {analysis}
 
-### 🎯 التوصية الاستراتيجية النهائية:
-بناءً على التحليل المتكامل للإطارين، يتم تقديم التوصيات التالية:
-- نقاط الدخول المثلى
-- إدارة المخاطرة المناسبة
-- أهداف الربح المحتملة
-"""
-
-            # تقسيم الرد النهائي مع مراعاة SendPulse
-            final_analysis_chunks = split_long_message(final_analysis)
+🎯 **خلاصة:** تم تحليل الإطارين بنجاح. ركز على النقاط الرئيسية أعلاه."""
             
-            # إذا طلبنا تنسيق SendPulse وكانت النتيجة قائمة، ندمجها
-            if format_for_sendpulse and isinstance(final_analysis_chunks, list):
-                final_analysis_response = "\n\n".join(final_analysis_chunks)
-            else:
-                final_analysis_response = final_analysis_chunks
+            # التأكد من الطول النهائي
+            if len(final_analysis) > 1000:
+                final_analysis = analyze_with_openai(img_str, img_format, "SUMMARY", f"H4: {session['h4_analysis']} M15: {analysis}")
 
             del analysis_sessions[user_id]
 
             return jsonify({
                 "message": "✅ تم التحليل الشامل بنجاح",
-                "analysis": final_analysis_response,
+                "analysis": final_analysis,
+                "status": "completed"
+            }), 200
+
+        elif session['status'] == 'awaiting_h4':
+            # الصورة الثانية - H4
+            analysis = analyze_with_openai(img_str, img_format, "H4", session.get('m15_analysis'))
+            session['h4_analysis'] = analysis
+            session['status'] = 'completed'
+
+            # تحليل نهائي موجز جداً
+            final_analysis = f"""📊 **التحليل المتكامل:**
+
+⏱️ 15 دقيقة: {session['m15_analysis']}
+
+🕓 4 ساعات: {analysis}
+
+🎯 **خلاصة:** تم تحليل الإطارين بنجاح. ركز على النقاط الرئيسية أعلاه."""
+            
+            # التأكد من الطول النهائي
+            if len(final_analysis) > 1000:
+                final_analysis = analyze_with_openai(img_str, img_format, "SUMMARY", f"M15: {session['m15_analysis']} H4: {analysis}")
+
+            del analysis_sessions[user_id]
+
+            return jsonify({
+                "message": "✅ تم التحليل الشامل بنجاح",
+                "analysis": final_analysis,
                 "status": "completed"
             }), 200
 
         else:
             return jsonify({
                 "message": "خطأ في تسلسل التحليل",
-                "analysis": "الرجاء البدء بإرسال صورة الإطار 15 دقيقة أولاً"
+                "analysis": "الرجاء إرسال صورة للبدء"
             }), 400
 
     except Exception as e:
