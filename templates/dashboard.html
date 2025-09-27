@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Dashboard - XFLEXAI</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .key-generator { background: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0; }
+        .logout { color: red; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Welcome, {{ admin_username }}!</h1>
+        <a href="/admin/logout" class="logout">Logout</a>
+    </div>
+
+    <div class="key-generator">
+        <h2>Generate Registration Key</h2>
+        <select id="durationSelect">
+            <option value="1">1 Month</option>
+            <option value="3">3 Months</option>
+            <option value="12">1 Year</option>
+        </select>
+        <button onclick="generateKey()">Generate Key</button>
+        <div id="keyResult" style="margin-top: 10px;"></div>
+    </div>
+
+    <h2>Registered Users</h2>
+    <table>
+        <tr>
+            <th>Telegram ID</th>
+            <th>Registration Key</th>
+            <th>Expiry Date</th>
+            <th>Status</th>
+        </tr>
+        {% for user in users %}
+        <tr>
+            <td>{{ user[1] }}</td>
+            <td>{{ user[2] }}</td>
+            <td>{{ user[3].strftime('%Y-%m-%d') if user[3] else 'N/A' }}</td>
+            <td>{{ 'Active' if user[4] else 'Expired' }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <h2>Generated Keys</h2>
+    <table>
+        <tr>
+            <th>Key</th>
+            <th>Duration</th>
+            <th>Created By</th>
+            <th>Used</th>
+            <th>Created Date</th>
+        </tr>
+        {% for key in keys %}
+        <tr>
+            <td>{{ key[1] }}</td>
+            <td>{{ key[2] }} months</td>
+            <td>{{ key[7] or 'System' }}</td>
+            <td>{{ 'Yes' if key[5] else 'No' }}</td>
+            <td>{{ key[4].strftime('%Y-%m-%d') if key[4] else 'N/A' }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <script>
+        async function generateKey() {
+            const duration = document.getElementById('durationSelect').value;
+            
+            const response = await fetch('/admin/generate-key', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ duration: duration })
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                document.getElementById('keyResult').innerHTML = 
+                    `<strong>Generated Key: ${result.key}</strong> - Copy this key and provide it to users.`;
+            } else {
+                document.getElementById('keyResult').innerHTML = 
+                    `<span style="color: red;">Error: ${result.error}</span>`;
+            }
+        }
+    </script>
+</body>
+</html>

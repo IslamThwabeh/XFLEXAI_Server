@@ -3,13 +3,18 @@ import base64
 import re
 import requests
 import json
-from flask import Flask, request, jsonify
+import psycopg2
+import bcrypt
+import random
+import string
+from flask import Flask, request, jsonify, session, render_template, redirect, url_for
 from PIL import Image
 from io import BytesIO
 import time
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('SESSION_SECRET', 'fallback-secret-key-for-dev')
 
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
 
@@ -19,6 +24,63 @@ OPENAI_AVAILABLE = False
 client = None
 openai_error_message = ""
 openai_last_check = 0
+
+# Database connection function
+def get_db_connection():
+    return psycopg2.connect(os.getenv('DATABASE_URL'))
+
+# Initialize database tables
+def init_db():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    # Create tables if they don't exist
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS admins (
+            id SERIAL PRIMARY KEY,
+            username VARCHAR(50) UNIQUE NOT NULL,
+            password_hash VARCHAR(255) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            telegram_user_id BIGINT UNIQUE NOT NULL,
+            registration_key VARCHAR(20) UNIQUE NOT NULL,
+            expiry_date TIMESTAMP NOT NULL,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS registration_keys (
+            id SERIAL PRIMARY KEY,
+            key_value VARCHAR(20) UNIQUE NOT NULL,
+            duration_months INTEGER NOT NULL,
+            created_by INTEGER REFERENCES admins(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            used BOOLEAN DEFAULT FALSE,
+            used_by INTEGER REFERENCES users(id),
+            used_at TIMESTAMP
+        )
+    ''')
+    
+    conn.commit()
+    cur.close()
+    conn.close()
+    print("Database tables initialized successfully")
+
+# Generate short registration key (6 characters)
+def generate_short_key():
+    chars = string.ascii_uppercase + string.digits
+    return ''.join(random.choice(chars) for _ in range(6))
+
+# Initialize database on startup
+init_db()
 
 def init_openai():
     global OPENAI_AVAILABLE, client, openai_error_message, openai_last_check
@@ -66,7 +128,7 @@ init_openai()
 
 def analyze_with_openai(image_str, image_format, timeframe=None, previous_analysis=None, user_analysis=None, action_type="chart_analysis"):
     """تحليل الصورة أو النص مع إجبار OpenAI على الالتزام بعدد أحرف محدد"""
-    
+
     if action_type == "user_analysis_feedback":
         # تحليل وتقييم تحليل المستخدم
         char_limit = 800
@@ -85,7 +147,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 **تأكد من عد الأحرف والالتزام بالحد {char_limit} حرف.**
 """
         max_tokens = char_limit // 2 + 50
-        
+
     elif timeframe == "H4" and previous_analysis:
         # التحليل النهائي بعد جمع الإطارين
         char_limit = 800
@@ -96,7 +158,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 
 **التزم الصارم بالشروط التالية:**
 1. لا تتجاوز {char_limit} حرف تحت أي ظرف
-2. دمج الرؤى من الإطارين
+2. دمج الرؤيات من الإطارين
 3. تقديم توصية تداول واحدة واضحة
 4. ذكر إدارة المخاطرة باختصار
 
@@ -108,7 +170,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 **تأكد من عد الأحرف والالتزام بالحد {char_limit} حرف.**
 """
         max_tokens = char_limit // 2 + 50
-        
+
     else:
         # التحليل الأولي للإطار الواحد
         char_limit = 600
@@ -135,7 +197,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
             model="gpt-4o",
             messages=[
                 {
-                    "role": "system", 
+                    "role": "system",
                     "content": f"أنت محلل فني محترف. التزم الصارم بعدم تجاوز {char_limit} حرف في ردك."
                 },
                 {
@@ -176,7 +238,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
         )
 
     analysis = response.choices[0].message.content.strip()
-    
+
     # التحقق من الالتزام بالحد (آلية احتياطية)
     if len(analysis) > char_limit + 100:
         retry_prompt = f"""
@@ -194,8 +256,131 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
             temperature=0.7
         )
         analysis = retry_response.choices[0].message.content.strip()
-    
+
     return analysis
+
+# ==================== ADMIN ROUTES ====================
+
+@app.route('/admin/login', methods=['GET', 'POST'])
+def admin_login():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute('SELECT * FROM admins WHERE username = %s', (username,))
+        admin = cur.fetchone()
+        cur.close()
+        conn.close()
+        
+        if admin and bcrypt.checkpw(password.encode('utf-8'), admin[2].encode('utf-8')):
+            session['admin_id'] = admin[0]
+            session['admin_username'] = admin[1]
+            return redirect('/admin/dashboard')
+        else:
+            return render_template('login.html', error='Invalid credentials')
+    
+    return render_template('login.html')
+
+@app.route('/admin/dashboard')
+def admin_dashboard():
+    if 'admin_id' not in session:
+        return redirect('/admin/login')
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    # Get all users
+    cur.execute('''
+        SELECT u.*, rk.duration_months 
+        FROM users u 
+        LEFT JOIN registration_keys rk ON u.registration_key = rk.key_value 
+        ORDER BY u.created_at DESC
+    ''')
+    users = cur.fetchall()
+    
+    # Get generated keys
+    cur.execute('''
+        SELECT rk.*, a.username as created_by_username 
+        FROM registration_keys rk 
+        LEFT JOIN admins a ON rk.created_by = a.id 
+        ORDER BY rk.created_at DESC
+    ''')
+    keys = cur.fetchall()
+    
+    cur.close()
+    conn.close()
+    
+    return render_template('dashboard.html', 
+                         admin_username=session['admin_username'],
+                         users=users, 
+                         keys=keys)
+
+@app.route('/admin/generate-key', methods=['POST'])
+def generate_key():
+    if 'admin_id' not in session:
+        return jsonify({'success': False, 'error': 'Not authenticated'})
+    
+    duration = request.json.get('duration', 1)
+    
+    # Generate unique key
+    key = generate_short_key()
+    is_unique = False
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    while not is_unique:
+        cur.execute('SELECT * FROM registration_keys WHERE key_value = %s', (key,))
+        if cur.fetchone() is None:
+            is_unique = True
+        else:
+            key = generate_short_key()
+    
+    # Insert the new key
+    cur.execute(
+        'INSERT INTO registration_keys (key_value, duration_months, created_by) VALUES (%s, %s, %s)',
+        (key, duration, session['admin_id'])
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    
+    return jsonify({'success': True, 'key': key})
+
+@app.route('/admin/logout')
+def admin_logout():
+    session.clear()
+    return redirect('/admin/login')
+
+# Temporary route to create first admin (remove after use)
+@app.route('/admin/create-first-admin')
+def create_first_admin():
+    username = "admin"
+    password = "admin123"  # Change this after first login
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    # Check if admin already exists
+    cur.execute('SELECT * FROM admins WHERE username = %s', (username,))
+    if cur.fetchone():
+        return "Admin user already exists"
+    
+    # Create admin
+    hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    cur.execute(
+        'INSERT INTO admins (username, password_hash) VALUES (%s, %s)',
+        (username, hashed_password)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    
+    return f"Admin user created! Username: {username}, Password: {password} - PLEASE CHANGE PASSWORD AFTER LOGIN!"
+
+# ==================== API ROUTES ====================
 
 @app.route('/')
 def home():
@@ -249,7 +434,7 @@ def analyze():
                 'conversation_history': []
             }
 
-        session = analysis_sessions[user_id]
+        session_data = analysis_sessions[user_id]
 
         # تحميل الصورة إذا وجدت
         image_str = None
@@ -285,12 +470,12 @@ def analyze():
                 }), 400
 
             analysis = analyze_with_openai(image_str, img_format, timeframe)
-            session['first_analysis'] = analysis
-            session['first_timeframe'] = timeframe
-            session['status'] = 'first_analysis_done'
-            
+            session_data['first_analysis'] = analysis
+            session_data['first_timeframe'] = timeframe
+            session_data['status'] = 'first_analysis_done'
+
             # إضافة إلى سجل المحادثة
-            session['conversation_history'].append({
+            session_data['conversation_history'].append({
                 'type': 'analysis',
                 'timeframe': timeframe,
                 'content': analysis,
@@ -302,7 +487,7 @@ def analyze():
                 "message": f"✅ تم تحليل {timeframe} بنجاح",
                 "analysis": analysis,
                 "user_id": user_id,
-                "status": session['status'],
+                "status": session_data['status'],
                 "next_actions": [
                     {"action": "add_timeframe", "label": "➕ إضافة إطار زمني آخر"},
                     {"action": "user_analysis", "label": "📝 إضافة تحليلي الشخصي"}
@@ -318,7 +503,7 @@ def analyze():
                     "analysis": "تعذر تحميل الصورة المطلوبة"
                 }), 400
 
-            if session['status'] != 'first_analysis_done':
+            if session_data['status'] != 'first_analysis_done':
                 return jsonify({
                     "success": False,
                     "message": "خطأ في التسلسل",
@@ -326,25 +511,25 @@ def analyze():
                 }), 400
 
             # تحديد الإطار الزمني التلقائي (المعاكس للأول)
-            if session['first_timeframe'] == 'M15':
+            if session_data['first_timeframe'] == 'M15':
                 new_timeframe = 'H4'
             else:
                 new_timeframe = 'M15'
 
-            analysis = analyze_with_openai(image_str, img_format, new_timeframe, session['first_analysis'])
-            session['second_analysis'] = analysis
-            session['second_timeframe'] = new_timeframe
-            session['status'] = 'both_analyses_done'
+            analysis = analyze_with_openai(image_str, img_format, new_timeframe, session_data['first_analysis'])
+            session_data['second_analysis'] = analysis
+            session_data['second_timeframe'] = new_timeframe
+            session_data['status'] = 'both_analyses_done'
 
             # التحليل النهائي التجميعي
             final_analysis = analyze_with_openai(
-                None, None, "H4", 
-                f"{session['first_timeframe']}: {session['first_analysis']}",
+                None, None, "H4",
+                f"{session_data['first_timeframe']}: {session_data['first_analysis']}",
                 None, "chart_analysis"
             )
 
             # إضافة إلى سجل المحادثة
-            session['conversation_history'].append({
+            session_data['conversation_history'].append({
                 'type': 'analysis',
                 'timeframe': new_timeframe,
                 'content': analysis,
@@ -356,7 +541,7 @@ def analyze():
                 "message": "✅ تم التحليل الشامل بنجاح",
                 "analysis": final_analysis,
                 "user_id": user_id,
-                "status": session['status'],
+                "status": session_data['status'],
                 "next_actions": [
                     {"action": "user_analysis", "label": "📝 إضافة تحليلي الشخصي للحصول على تقييم"}
                 ]
@@ -372,15 +557,15 @@ def analyze():
                 }), 400
 
             feedback = analyze_with_openai(
-                image_str, img_format if image_str else None, 
+                image_str, img_format if image_str else None,
                 None, None, user_analysis_text, "user_analysis_feedback"
             )
-            
-            session['user_analysis'] = user_analysis_text
-            session['status'] = 'user_analysis_reviewed'
+
+            session_data['user_analysis'] = user_analysis_text
+            session_data['status'] = 'user_analysis_reviewed'
 
             # إضافة إلى سجل المحادثة
-            session['conversation_history'].append({
+            session_data['conversation_history'].append({
                 'type': 'user_analysis',
                 'content': user_analysis_text,
                 'feedback': feedback,
@@ -391,8 +576,8 @@ def analyze():
                 "success": True,
                 "message": "✅ تم تقييم تحليلك بنجاح",
                 "analysis": feedback,
-                "user_id": user_id,
-                "status": session['status'],
+                "user_id': user_id,
+                "status": session_data['status'],
                 "next_actions": [
                     {"action": "new_analysis", "label": "🔄 بدء تحليل جديد"}
                 ]
@@ -409,7 +594,7 @@ def analyze():
                 'user_analysis': None,
                 'created_at': datetime.now(),
                 'status': 'ready',
-                'conversation_history': session.get('conversation_history', [])
+                'conversation_history': session_data.get('conversation_history', [])
             }
 
             return jsonify({
@@ -479,12 +664,12 @@ def status():
 def session_info(user_id):
     """الحصول على معلومات جلسة مستخدم معين"""
     if user_id in analysis_sessions:
-        session = analysis_sessions[user_id].copy()
+        session_data = analysis_sessions[user_id].copy()
         # إخفاء البيانات الحساسة للعرض
-        if 'conversation_history' in session:
-            session['conversation_count'] = len(session['conversation_history'])
-            del session['conversation_history']
-        return jsonify({"success": True, "session": session})
+        if 'conversation_history' in session_data:
+            session_data['conversation_count'] = len(session_data['conversation_history'])
+            del session_data['conversation_history']
+        return jsonify({"success": True, "session": session_data})
     else:
         return jsonify({"success": False, "message": "الجلسة غير موجودة"})
 
