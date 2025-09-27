@@ -25,6 +25,10 @@ client = None
 openai_error_message = ""
 openai_last_check = 0
 
+print("ALL ENVIRONMENT VARIABLES:")
+for k, v in os.environ.items():
+    print(f"{k}: {v}")
+
 # Database connection function
 def get_db_connection():
     db_url = os.getenv('DATABASE_URL')
