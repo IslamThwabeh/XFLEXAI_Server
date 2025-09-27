@@ -1,91 +1,136 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
-    <title>Admin Dashboard - XFLEXAI</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        .key-generator { background: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0; }
-        .logout { color: red; text-decoration: none; }
-    </style>
+  <meta charset="utf-8">
+  <title>Admin Dashboard</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; padding: 20px; }
+    header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+    table { width:100%; border-collapse: collapse; margin-bottom: 24px; }
+    th, td { border:1px solid #ddd; padding:8px; text-align:left; }
+    th { background:#f5f5f5; }
+    .success { color: #0a7; }
+    .danger { color: #c00; }
+    .small { font-size: 0.9em; color:#666; }
+    .controls { margin-bottom: 12px; }
+    .key-box { background:#fafafa; padding:8px; border:1px dashed #ccc; display:inline-block; margin-left:12px; }
+    button { padding:6px 10px; cursor:pointer; }
+  </style>
 </head>
 <body>
-    <div class="header">
-        <h1>Welcome, {{ admin_username }}!</h1>
-        <a href="/admin/logout" class="logout">Logout</a>
+  <header>
+    <div>
+      <h2>Welcome, {{ admin_username or "Admin" }}!</h2>
     </div>
-
-    <div class="key-generator">
-        <h2>Generate Registration Key</h2>
-        <select id="durationSelect">
-            <option value="1">1 Month</option>
-            <option value="3">3 Months</option>
-            <option value="12">1 Year</option>
-        </select>
-        <button onclick="generateKey()">Generate Key</button>
-        <div id="keyResult" style="margin-top: 10px;"></div>
+    <div>
+      <a href="/admin/logout">Logout</a>
     </div>
+  </header>
 
-    <h2>Registered Users</h2>
+  <section class="controls">
+    <h3>Generate Registration Key</h3>
+    <p>Click the button below to generate a short key (admin only).</p>
+    <button id="genKeyBtn">Generate Key</button>
+    <span id="generatedKey" class="key-box" aria-live="polite"></span>
+    <div class="small">Optionally enter a Telegram ID or @username below to bind a key when creating it (not required).</div>
+  </section>
+
+  <section>
+    <h3>Registered Users</h3>
     <table>
+      <thead>
         <tr>
-            <th>Telegram ID</th>
-            <th>Registration Key</th>
-            <th>Expiry Date</th>
-            <th>Status</th>
+          <th>Telegram ID</th>
+          <th>Registration Key</th>
+          <th>Expiry Date</th>
+          <th>Days Left</th>
+          <th>Status</th>
         </tr>
-        {% for user in users %}
-        <tr>
-            <td>{{ user[1] }}</td>
-            <td>{{ user[2] }}</td>
-            <td>{{ user[3].strftime('%Y-%m-%d') if user[3] else 'N/A' }}</td>
-            <td>{{ 'Active' if user[4] else 'Expired' }}</td>
-        </tr>
-        {% endfor %}
+      </thead>
+      <tbody>
+        {% if users and users|length > 0 %}
+          {% for u in users %}
+            <tr>
+              <td>{{ u.telegram_user_id }}</td>
+              <td>{{ u.registration_key or '—' }}</td>
+              <td>{{ u.expiry_date or 'N/A' }}</td>
+              <td>{{ u.days_left if u.days_left is not none else '—' }}</td>
+              <td>
+                {% if u.status == 'Active' %}
+                  <span class="success">Active</span>
+                {% elif u.status == 'Expired' %}
+                  <span class="danger">Expired</span>
+                {% else %}
+                  <span class="small">{{ u.status }}</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="5" class="small">No registered users yet.</td></tr>
+        {% endif %}
+      </tbody>
     </table>
+  </section>
 
-    <h2>Generated Keys</h2>
+  <section>
+    <h3>Generated Keys</h3>
     <table>
+      <thead>
         <tr>
-            <th>Key</th>
-            <th>Duration</th>
-            <th>Created By</th>
-            <th>Used</th>
-            <th>Created Date</th>
+          <th>Key</th>
+          <th>Duration (months)</th>
+          <th>Allowed Telegram ID</th>
+          <th>Created By</th>
+          <th>Used</th>
+          <th>Used By (user id)</th>
+          <th>Created Date</th>
         </tr>
-        {% for key in keys %}
-        <tr>
-            <td>{{ key[1] }}</td>
-            <td>{{ key[2] }} months</td>
-            <td>{{ key[7] or 'System' }}</td>
-            <td>{{ 'Yes' if key[5] else 'No' }}</td>
-            <td>{{ key[4].strftime('%Y-%m-%d') if key[4] else 'N/A' }}</td>
-        </tr>
-        {% endfor %}
+      </thead>
+      <tbody>
+        {% if keys and keys|length > 0 %}
+          {% for k in keys %}
+            <tr>
+              <td>{{ k.key_value }}</td>
+              <td>{{ k.duration_months }}</td>
+              <td>{{ k.allowed_telegram_user_id or 'Unbound' }}</td>
+              <td>{{ k.created_by_username }}</td>
+              <td>{{ 'Yes' if k.used else 'No' }}</td>
+              <td>{{ k.used_by or '—' }}</td>
+              <td>{{ k.created_at or 'N/A' }}</td>
+            </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="7" class="small">No registration keys generated yet.</td></tr>
+        {% endif %}
+      </tbody>
     </table>
+  </section>
 
-    <script>
-        async function generateKey() {
-            const duration = document.getElementById('durationSelect').value;
-            
-            const response = await fetch('/admin/generate-key', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ duration: duration })
-            });
-            
-            const result = await response.json();
-            if (result.success) {
-                document.getElementById('keyResult').innerHTML = 
-                    `<strong>Generated Key: ${result.key}</strong> - Copy this key and provide it to users.`;
-            } else {
-                document.getElementById('keyResult').innerHTML = 
-                    `<span style="color: red;">Error: ${result.error}</span>`;
-            }
-        }
-    </script>
+<script>
+  // Simple JS to call generate-key and display response.
+  // It sends JSON and includes cookies so session auth is preserved.
+  document.getElementById('genKeyBtn').addEventListener('click', async function () {
+    // Optionally, you could prompt admin for telegram_identifier; left simple here.
+    const payload = { duration: 1 }; // default 1 month
+    try {
+      const res = await fetch('/admin/generate-key', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert('Failed to generate key: ' + (data && data.error ? data.error : res.statusText));
+        return;
+      }
+      document.getElementById('generatedKey').textContent = data.key;
+    } catch (err) {
+      alert('Error generating key: ' + err.message);
+    }
+  });
+</script>
 </body>
 </html>

@@ -56,9 +56,76 @@ def admin_dashboard():
     keys = get_registration_keys()
 
     return render_template('dashboard.html',
-                           admin_username=session.get('admin_username'),
-                           users=users,
-                           keys=keys)
+                       admin_username=session.get('admin_username'),
+                       users=users,
+                       keys=keys)
+# Fetch raw rows from DB (dicts)
+raw_users = get_users() or []
+raw_keys = get_registration_keys() or []
+
+# Normalize and format user rows for display
+display_users = []
+from datetime import datetime
+for u in raw_users:
+    # depending on fetch driver expiry_date may be datetime or string
+    expiry = u.get('expiry_date')
+    expiry_dt = None
+    expiry_str = ''
+    days_left = None
+    status = 'Unknown'
+    try:
+        if expiry:
+            if isinstance(expiry, str):
+                expiry_dt = datetime.fromisoformat(expiry)
+            else:
+                expiry_dt = expiry
+            expiry_str = expiry_dt.strftime('%Y-%m-%d %H:%M:%S')
+            days_left = (expiry_dt - datetime.utcnow()).days
+            status = 'Active' if expiry_dt > datetime.utcnow() and u.get('is_active', True) else 'Expired'
+        else:
+            expiry_str = 'N/A'
+            status = 'Inactive' if not u.get('is_active', True) else 'No expiry'
+    except Exception:
+        expiry_str = str(expiry)
+
+    display_users.append({
+        'telegram_user_id': u.get('telegram_user_id'),
+        'registration_key': u.get('registration_key'),
+        'expiry_date': expiry_str,
+        'days_left': days_left,
+        'is_active': u.get('is_active', True),
+        'status': status,
+        'created_at': u.get('created_at')
+    })
+
+# Normalize and format registration keys
+display_keys = []
+for k in raw_keys:
+    created_at = k.get('created_at')
+    created_str = ''
+    try:
+        if created_at:
+            if isinstance(created_at, str):
+                created_str = created_at
+            else:
+                created_str = created_at.strftime('%Y-%m-%d %H:%M:%S')
+    except Exception:
+        created_str = str(created_at)
+
+    display_keys.append({
+        'key_value': k.get('key_value'),
+        'duration_months': k.get('duration_months'),
+        'created_by_username': k.get('created_by_username') or 'System',
+        'used': bool(k.get('used')),
+        'used_by': k.get('used_by'),
+        'allowed_telegram_user_id': k.get('allowed_telegram_user_id'),
+        'created_at': created_str
+    })
+
+return render_template('dashboard.html',
+                       admin_username=session.get('admin_username'),
+                       users=display_users,
+                       keys=display_keys)
 
 @admin_bp.route('/admin/generate-key', methods=['POST'])
 def generate_key():
