@@ -1,5 +1,10 @@
-import os
+# services/openai_service.py
 import time
+import base64
+import requests
+from PIL import Image
+from io import BytesIO
+from config import Config
 
 OPENAI_AVAILABLE = False
 client = None
@@ -8,33 +13,33 @@ openai_last_check = 0
 
 def init_openai():
     """
-    Initialize OpenAI client and check availability.
-    Updates module-level OPENAI_AVAILABLE, client, openai_error_message, openai_last_check.
+    Initialize OpenAI client and test model availability.
+    Sets OPENAI_AVAILABLE, client, openai_error_message, openai_last_check.
     """
     global OPENAI_AVAILABLE, client, openai_error_message, openai_last_check
-
     try:
         from openai import OpenAI
-        api_key = os.getenv("OPENAI_API_KEY")
+        api_key = Config.OPENAI_API_KEY
 
         if not api_key or api_key == "your-api-key-here":
             openai_error_message = "OpenAI API key not configured"
+            OPENAI_AVAILABLE = False
             return False
 
         client = OpenAI(api_key=api_key)
 
         try:
             models = client.models.list()
-            model_ids = [model.id for model in models.data]
+            model_ids = [m.id for m in models.data]
             if "gpt-4o" not in model_ids:
                 openai_error_message = "GPT-4o model not available in your account"
+                OPENAI_AVAILABLE = False
                 return False
 
             OPENAI_AVAILABLE = True
             openai_error_message = ""
             openai_last_check = time.time()
             return True
-
         except Exception as e:
             error_msg = str(e)
             if "insufficient_quota" in error_msg:
@@ -43,24 +48,26 @@ def init_openai():
                 openai_error_message = "Invalid API key. Please check your OPENAI_API_KEY environment variable."
             else:
                 openai_error_message = f"OpenAI API test failed: {error_msg}"
+            OPENAI_AVAILABLE = False
             return False
 
     except ImportError:
         openai_error_message = "OpenAI package not installed"
+        OPENAI_AVAILABLE = False
         return False
     except Exception as e:
         openai_error_message = f"OpenAI initialization error: {str(e)}"
+        OPENAI_AVAILABLE = False
         return False
 
 def analyze_with_openai(image_str, image_format, timeframe=None, previous_analysis=None, user_analysis=None, action_type="chart_analysis"):
     """
     Analyze an image or text using OpenAI and enforce a character limit in responses.
-    Mirrors the logic from the original single-file app.
+    Mirrors the original analyze logic.
     """
     global client
 
     if action_type == "user_analysis_feedback":
-        # تحليل وتقييم تحليل المستخدم
         char_limit = 800
         analysis_prompt = f"""
 أنت خبير تحليل فني. قم بتقييم تحليل المستخدم التالي وتقديم ملاحظات بناءة:
@@ -79,7 +86,6 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
         max_tokens = char_limit // 2 + 50
 
     elif timeframe == "H4" and previous_analysis:
-        # التحليل النهائي بعد جمع الإطارين
         char_limit = 800
         analysis_prompt = f"""
 أنت محلل فني محترف. قدم تحليلاً نهائياً موجزاً جداً يجمع بين الإطارين.
@@ -102,7 +108,6 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
         max_tokens = char_limit // 2 + 50
 
     else:
-        # التحليل الأولي للإطار الواحد
         char_limit = 600
         analysis_prompt = f"""
 أنت محلل فني محترف. قدم تحليلاً دقيقاً ومختصراً للغاية للشارت.
@@ -122,46 +127,28 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 """
         max_tokens = char_limit // 2 + 50
 
-    if image_str:  # إذا كان هناك صورة للتحليل
+    if not client:
+        raise RuntimeError("OpenAI client not initialized")
+
+    if image_str:
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {
-                    "role": "system",
-                    "content": f"أنت محلل فني محترف. التزم الصارم بعدم تجاوز {char_limit} حرف في ردك."
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": analysis_prompt
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/{image_format.lower()};base64,{image_str}",
-                                "detail": "high"
-                            }
-                        }
-                    ]
-                }
+                {"role": "system", "content": f"أنت محلل فني محترف. التزم الصارم بعدم تجاوز {char_limit} حرف في ردك."},
+                {"role": "user", "content": [
+                    {"type": "text", "text": analysis_prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/{image_format.lower()};base64,{image_str}", "detail": "high"}}
+                ]}
             ],
             max_tokens=max_tokens,
             temperature=0.7
         )
-    else:  # إذا كان تحليل نصي فقط
+    else:
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {
-                    "role": "system",
-                    "content": f"أنت محلل فني محترف. التزم الصارم بعدم تجاوز {char_limit} حرف في ردك."
-                },
-                {
-                    "role": "user",
-                    "content": analysis_prompt
-                }
+                {"role": "system", "content": f"أنت محلل فني محترف. التزم الصارم بعدم تجاوز {char_limit} حرف في ردك."},
+                {"role": "user", "content": analysis_prompt}
             ],
             max_tokens=max_tokens,
             temperature=0.7
@@ -169,7 +156,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 
     analysis = response.choices[0].message.content.strip()
 
-    # التحقق من الالتزام بالحد (آلية احتياطية)
+    # backup enforcement of character limit
     if len(analysis) > char_limit + 100:
         retry_prompt = f"""
 التحليل السابق كان طويلاً جداً ({len(analysis)} حرف). أعد كتابته مع الالتزام بعدم تجاوز {char_limit} حرف:
@@ -188,3 +175,19 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
         analysis = retry_response.choices[0].message.content.strip()
 
     return analysis
+
+def load_image_from_url(image_url):
+    """Load and encode image from URL and return (b64string, format) or (None, None)"""
+    try:
+        response = requests.get(image_url, timeout=10)
+        if response.status_code == 200:
+            img = Image.open(BytesIO(response.content))
+            if img.format in ['PNG', 'JPEG', 'JPG']:
+                buffered = BytesIO()
+                img_format = img.format if img.format else 'JPEG'
+                img.save(buffered, format=img_format)
+                return base64.b64encode(buffered.getvalue()).decode("utf-8"), img_format
+        return None, None
+    except Exception as e:
+        print(f"Error loading image: {e}")
+        return None, None

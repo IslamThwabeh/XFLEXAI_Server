@@ -1,17 +1,19 @@
+# app.py - main entry point
 import os
 from flask import Flask
-from db import init_db
-from openai_utils import init_openai
-from admin import admin_bp
-from routes import api_bp
+from config import Config
+from database.operations import init_database
+from services.openai_service import init_openai
+from routes.admin_routes import admin_bp
+from routes.api_routes import api_bp
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SESSION_SECRET', 'fallback-secret-key-for-dev')
-app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
+app.config.from_object(Config)
+app.secret_key = Config.SECRET_KEY
+app.config['MAX_CONTENT_LENGTH'] = Config.MAX_CONTENT_LENGTH
 
 # Initialize DB and OpenAI on startup
-# NOTE: init_db() will raise if DB is unreachable.
-init_db()
+init_database()
 init_openai()
 
 # Register blueprints
@@ -20,5 +22,5 @@ app.register_blueprint(api_bp)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    # In Production use a proper WSGI server (gunicorn/uvicorn)
+    # Use a production WSGI server in production (gunicorn)
     app.run(host="0.0.0.0", port=port)

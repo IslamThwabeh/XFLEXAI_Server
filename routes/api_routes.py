@@ -1,14 +1,12 @@
-import base64
-import requests
-from io import BytesIO
-from PIL import Image
+# routes/api_routes.py
 import time
 from datetime import datetime
-from flask import Blueprint, request, jsonify, session
-from openai_utils import analyze_with_openai, init_openai, OPENAI_AVAILABLE, openai_error_message, openai_last_check, init_openai as _init_openai
-# analysis_sessions lives here
-api_bp = Blueprint('api', __name__)
+from flask import Blueprint, request, jsonify
+from services.openai_service import analyze_with_openai, load_image_from_url, OPENAI_AVAILABLE, openai_error_message, init_openai, openai_last_check
 
+api_bp = Blueprint('api_bp', __name__)
+
+# Keep in-memory sessions (for now)
 analysis_sessions = {}
 
 @api_bp.route('/')
@@ -18,7 +16,6 @@ def home():
 
 @api_bp.route('/analyze', methods=['POST'])
 def analyze():
-    """Main endpoint supporting different analysis actions (chart_analysis, add_timeframe, user_analysis, new_analysis)"""
     try:
         if not request.is_json:
             return jsonify({
@@ -28,7 +25,6 @@ def analyze():
             }), 415
 
         data = request.get_json()
-
         if not data:
             return jsonify({
                 "success": False,
@@ -37,7 +33,7 @@ def analyze():
             }), 400
 
         user_id = data.get('user_id', 'default_user')
-        action_type = data.get('action_type', 'chart_analysis')  # chart_analysis, add_timeframe, user_analysis
+        action_type = data.get('action_type', 'chart_analysis')
         image_url = data.get('image_url')
         user_analysis_text = data.get('user_analysis')
         timeframe = data.get('timeframe', 'M15')
@@ -69,17 +65,7 @@ def analyze():
         image_str = None
         image_format = None
         if image_url:
-            try:
-                response = requests.get(image_url, timeout=10)
-                if response.status_code == 200:
-                    img = Image.open(BytesIO(response.content))
-                    if img.format in ['PNG', 'JPEG', 'JPG']:
-                        buffered = BytesIO()
-                        img_format = img.format if img.format else 'JPEG'
-                        img.save(buffered, format=img_format)
-                        image_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-            except Exception as e:
-                print(f"Error loading image: {e}")
+            image_str, image_format = load_image_from_url(image_url)
 
         if not OPENAI_AVAILABLE:
             return jsonify({
@@ -88,7 +74,7 @@ def analyze():
                 "analysis": openai_error_message
             }), 503
 
-        # handle actions
+        # handle actions (chart_analysis, add_timeframe, user_analysis, new_analysis)
         if action_type == 'chart_analysis':
             if not image_str:
                 return jsonify({
@@ -97,7 +83,7 @@ def analyze():
                     "analysis": "تعذر تحميل الصورة المطلوبة"
                 }), 400
 
-            analysis = analyze_with_openai(image_str, img_format, timeframe)
+            analysis = analyze_with_openai(image_str, image_format, timeframe)
             session_data['first_analysis'] = analysis
             session_data['first_timeframe'] = timeframe
             session_data['status'] = 'first_analysis_done'
@@ -136,12 +122,9 @@ def analyze():
                     "analysis": "يجب تحليل الإطار الأول قبل إضافة الثاني"
                 }), 400
 
-            if session_data['first_timeframe'] == 'M15':
-                new_timeframe = 'H4'
-            else:
-                new_timeframe = 'M15'
+            new_timeframe = 'H4' if session_data['first_timeframe'] == 'M15' else 'M15'
 
-            analysis = analyze_with_openai(image_str, img_format, new_timeframe, session_data['first_analysis'])
+            analysis = analyze_with_openai(image_str, image_format, new_timeframe, session_data['first_analysis'])
             session_data['second_analysis'] = analysis
             session_data['second_timeframe'] = new_timeframe
             session_data['status'] = 'both_analyses_done'
@@ -179,7 +162,7 @@ def analyze():
                 }), 400
 
             feedback = analyze_with_openai(
-                image_str, img_format if image_str else None,
+                image_str, image_format if image_str else None,
                 None, None, user_analysis_text, "user_analysis_feedback"
             )
 
@@ -256,18 +239,17 @@ def multi_timeframe_analyze():
     return sendpulse_analyze()
 
 @api_bp.route('/user-analysis', methods=['POST'])
-def user_analysis():
+def user_analysis_route():
     data = request.get_json()
     if data:
         data['action_type'] = 'user_analysis'
     return analyze()
 
 @api_bp.route('/status')
-def status():
-    # refresh OpenAI status periodically
+def status_route():
     if time.time() - openai_last_check > 300:
         try:
-            _init_openai()
+            init_openai()
         except Exception:
             pass
 
