@@ -31,7 +31,9 @@ def get_table_definitions():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 used BOOLEAN DEFAULT FALSE,
                 used_by INTEGER REFERENCES users(id),
-                used_at TIMESTAMP
+                used_at TIMESTAMP,
+                -- optional: restrict this key to a specific Telegram user id (set by admin or on redeem)
+                allowed_telegram_user_id BIGINT
             )
         '''
     }
