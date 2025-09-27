@@ -27,7 +27,6 @@ openai_last_check = 0
 
 # Database connection function
 def get_db_connection():
-
     db_url = os.getenv('DATABASE_URL')
     print(f"DEBUG: DATABASE_URL is '{db_url}'")  # Logging the env variable
     try:
@@ -40,13 +39,48 @@ def get_db_connection():
 
 # Initialize database tables
 def init_db():
-        print("DEBUG: Starting database initialization.")
+    print("DEBUG: Starting database initialization.")
     try:
         conn = get_db_connection()
         print("DEBUG: Connection object:", conn)
         cur = conn.cursor()
         print("DEBUG: Cursor object created.")
-        # Your table creation statements here...
+
+        # Create tables if they don't exist
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS admins (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(50) UNIQUE NOT NULL,
+                password_hash VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                telegram_user_id BIGINT UNIQUE NOT NULL,
+                registration_key VARCHAR(20) UNIQUE NOT NULL,
+                expiry_date TIMESTAMP NOT NULL,
+                is_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS registration_keys (
+                id SERIAL PRIMARY KEY,
+                key_value VARCHAR(20) UNIQUE NOT NULL,
+                duration_months INTEGER NOT NULL,
+                created_by INTEGER REFERENCES admins(id),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                used BOOLEAN DEFAULT FALSE,
+                used_by INTEGER REFERENCES users(id),
+                used_at TIMESTAMP
+            )
+        ''')
+
         conn.commit()
         cur.close()
         conn.close()
@@ -54,46 +88,6 @@ def init_db():
     except Exception as e:
         print(f"ERROR: Database initialization failed: {e}")
         raise
-    
-    # Create tables if they don't exist
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS admins (
-            id SERIAL PRIMARY KEY,
-            username VARCHAR(50) UNIQUE NOT NULL,
-            password_hash VARCHAR(255) NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
-            telegram_user_id BIGINT UNIQUE NOT NULL,
-            registration_key VARCHAR(20) UNIQUE NOT NULL,
-            expiry_date TIMESTAMP NOT NULL,
-            is_active BOOLEAN DEFAULT TRUE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS registration_keys (
-            id SERIAL PRIMARY KEY,
-            key_value VARCHAR(20) UNIQUE NOT NULL,
-            duration_months INTEGER NOT NULL,
-            created_by INTEGER REFERENCES admins(id),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            used BOOLEAN DEFAULT FALSE,
-            used_by INTEGER REFERENCES users(id),
-            used_at TIMESTAMP
-        )
-    ''')
-    
-    conn.commit()
-    cur.close()
-    conn.close()
-    print("Database tables initialized successfully")
 
 # Generate short registration key (6 characters)
 def generate_short_key():
@@ -287,78 +281,78 @@ def admin_login():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
-        
+
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute('SELECT * FROM admins WHERE username = %s', (username,))
         admin = cur.fetchone()
         cur.close()
         conn.close()
-        
+
         if admin and bcrypt.checkpw(password.encode('utf-8'), admin[2].encode('utf-8')):
             session['admin_id'] = admin[0]
             session['admin_username'] = admin[1]
             return redirect('/admin/dashboard')
         else:
             return render_template('login.html', error='Invalid credentials')
-    
+
     return render_template('login.html')
 
 @app.route('/admin/dashboard')
 def admin_dashboard():
     if 'admin_id' not in session:
         return redirect('/admin/login')
-    
+
     conn = get_db_connection()
     cur = conn.cursor()
-    
+
     # Get all users
     cur.execute('''
-        SELECT u.*, rk.duration_months 
-        FROM users u 
-        LEFT JOIN registration_keys rk ON u.registration_key = rk.key_value 
+        SELECT u.*, rk.duration_months
+        FROM users u
+        LEFT JOIN registration_keys rk ON u.registration_key = rk.key_value
         ORDER BY u.created_at DESC
     ''')
     users = cur.fetchall()
-    
+
     # Get generated keys
     cur.execute('''
-        SELECT rk.*, a.username as created_by_username 
-        FROM registration_keys rk 
-        LEFT JOIN admins a ON rk.created_by = a.id 
+        SELECT rk.*, a.username as created_by_username
+        FROM registration_keys rk
+        LEFT JOIN admins a ON rk.created_by = a.id
         ORDER BY rk.created_at DESC
     ''')
     keys = cur.fetchall()
-    
+
     cur.close()
     conn.close()
-    
-    return render_template('dashboard.html', 
+
+    return render_template('dashboard.html',
                          admin_username=session['admin_username'],
-                         users=users, 
+                         users=users,
                          keys=keys)
 
 @app.route('/admin/generate-key', methods=['POST'])
 def generate_key():
     if 'admin_id' not in session:
         return jsonify({'success': False, 'error': 'Not authenticated'})
-    
+
     duration = request.json.get('duration', 1)
-    
+
     # Generate unique key
     key = generate_short_key()
     is_unique = False
-    
+
     conn = get_db_connection()
     cur = conn.cursor()
-    
+
     while not is_unique:
         cur.execute('SELECT * FROM registration_keys WHERE key_value = %s', (key,))
         if cur.fetchone() is None:
             is_unique = True
         else:
             key = generate_short_key()
-    
+
     # Insert the new key
     cur.execute(
         'INSERT INTO registration_keys (key_value, duration_months, created_by) VALUES (%s, %s, %s)',
@@ -367,7 +361,7 @@ def generate_key():
     conn.commit()
     cur.close()
     conn.close()
-    
+
     return jsonify({'success': True, 'key': key})
 
 @app.route('/admin/logout')
@@ -380,15 +374,15 @@ def admin_logout():
 def create_first_admin():
     username = "admin"
     password = "admin123"  # Change this after first login
-    
+
     conn = get_db_connection()
     cur = conn.cursor()
-    
+
     # Check if admin already exists
     cur.execute('SELECT * FROM admins WHERE username = %s', (username,))
     if cur.fetchone():
         return "Admin user already exists"
-    
+
     # Create admin
     hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     cur.execute(
@@ -398,7 +392,7 @@ def create_first_admin():
     conn.commit()
     cur.close()
     conn.close()
-    
+
     return f"Admin user created! Username: {username}, Password: {password} - PLEASE CHANGE PASSWORD AFTER LOGIN!"
 
 # ==================== API ROUTES ====================
