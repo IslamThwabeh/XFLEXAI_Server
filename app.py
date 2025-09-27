@@ -27,12 +27,33 @@ openai_last_check = 0
 
 # Database connection function
 def get_db_connection():
-    return psycopg2.connect(os.getenv('DATABASE_URL'))
+
+    db_url = os.getenv('DATABASE_URL')
+    print(f"DEBUG: DATABASE_URL is '{db_url}'")  # Logging the env variable
+    try:
+        conn = psycopg2.connect(db_url)
+        print("DEBUG: Successfully connected to the database.")
+        return conn
+    except Exception as e:
+        print(f"ERROR: Failed to connect to the database: {e}")
+        raise
 
 # Initialize database tables
 def init_db():
-    conn = get_db_connection()
-    cur = conn.cursor()
+        print("DEBUG: Starting database initialization.")
+    try:
+        conn = get_db_connection()
+        print("DEBUG: Connection object:", conn)
+        cur = conn.cursor()
+        print("DEBUG: Cursor object created.")
+        # Your table creation statements here...
+        conn.commit()
+        cur.close()
+        conn.close()
+        print("DEBUG: Database tables initialized successfully")
+    except Exception as e:
+        print(f"ERROR: Database initialization failed: {e}")
+        raise
     
     # Create tables if they don't exist
     cur.execute('''
