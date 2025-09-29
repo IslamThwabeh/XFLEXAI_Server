@@ -23,6 +23,20 @@ def get_table_definitions():
               updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''',
+        # create users BEFORE registration_keys because registration_keys references users(id)
+        'users': '''
+            CREATE TABLE IF NOT EXISTS users (
+              id SERIAL PRIMARY KEY,
+              telegram_user_id BIGINT UNIQUE NOT NULL,
+              registration_key_id INTEGER REFERENCES registration_keys(id),
+              registration_key_value VARCHAR(32),
+              expiry_date TIMESTAMP NOT NULL,
+              is_active BOOLEAN DEFAULT TRUE,
+              is_deleted BOOLEAN DEFAULT FALSE,
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''',
         'registration_keys': '''
             CREATE TABLE IF NOT EXISTS registration_keys (
               id SERIAL PRIMARY KEY,
@@ -38,19 +52,6 @@ def get_table_definitions():
               is_active BOOLEAN DEFAULT TRUE,
               is_deleted BOOLEAN DEFAULT FALSE,
               notes TEXT
-            )
-        ''',
-        'users': '''
-            CREATE TABLE IF NOT EXISTS users (
-              id SERIAL PRIMARY KEY,
-              telegram_user_id BIGINT UNIQUE NOT NULL,
-              registration_key_id INTEGER REFERENCES registration_keys(id),
-              registration_key_value VARCHAR(32),
-              expiry_date TIMESTAMP NOT NULL,
-              is_active BOOLEAN DEFAULT TRUE,
-              is_deleted BOOLEAN DEFAULT FALSE,
-              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         '''
     }
