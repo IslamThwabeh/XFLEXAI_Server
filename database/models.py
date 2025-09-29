@@ -1,5 +1,7 @@
 # database/models.py
-# Provides DDL statements for new canonical schema.
+# Provides DDL statements for canonical schema.
+# Note: foreign-key constraints that reference the other table are added later
+# via ALTER TABLE in init_database() to avoid circular creation issues.
 
 def get_table_definitions():
     return {
@@ -23,12 +25,12 @@ def get_table_definitions():
               updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''',
-        # create users BEFORE registration_keys because registration_keys references users(id)
+        # create users WITHOUT a foreign-key to registration_keys (avoid circular FK)
         'users': '''
             CREATE TABLE IF NOT EXISTS users (
               id SERIAL PRIMARY KEY,
               telegram_user_id BIGINT UNIQUE NOT NULL,
-              registration_key_id INTEGER REFERENCES registration_keys(id),
+              registration_key_id INTEGER,                 -- add FK later
               registration_key_value VARCHAR(32),
               expiry_date TIMESTAMP NOT NULL,
               is_active BOOLEAN DEFAULT TRUE,
@@ -37,6 +39,7 @@ def get_table_definitions():
               updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''',
+        # create registration_keys WITHOUT a foreign-key to users (used_by FK added later)
         'registration_keys': '''
             CREATE TABLE IF NOT EXISTS registration_keys (
               id SERIAL PRIMARY KEY,
@@ -47,7 +50,7 @@ def get_table_definitions():
               created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
               allowed_telegram_user_id BIGINT,
               used BOOLEAN DEFAULT FALSE,
-              used_by INTEGER REFERENCES users(id),
+              used_by INTEGER,      -- add FK later to users(id)
               used_at TIMESTAMP,
               is_active BOOLEAN DEFAULT TRUE,
               is_deleted BOOLEAN DEFAULT FALSE,

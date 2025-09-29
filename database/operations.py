@@ -19,10 +19,12 @@ def init_database():
         conn = get_db_connection()
         cur = conn.cursor()
         tables = get_table_definitions()
+        # Create each table (no circular FKs in DDL)
         for name, ddl in tables.items():
             cur.execute(ddl)
             print(f"DEBUG: Ensured table {name}")
-        # ensure indexes and seed key_types if missing
+
+        # ensure indexes
         cur.execute("""
             CREATE INDEX IF NOT EXISTS idx_users_telegram_user_id ON users (telegram_user_id);
         """)
@@ -32,6 +34,7 @@ def init_database():
         cur.execute("""
             CREATE INDEX IF NOT EXISTS idx_registration_keys_allowed_telegram_user_id ON registration_keys (allowed_telegram_user_id);
         """)
+
         # Seed basic key_types if not present
         cur.execute("""
             INSERT INTO key_types (name, duration_months, description)
@@ -43,6 +46,30 @@ def init_database():
             ) AS v(name, duration_months, description)
             WHERE NOT EXISTS (SELECT 1 FROM key_types WHERE name = v.name)
         """)
+
+        # Now add the FK constraints that reference the other table.
+        # Wrap each ALTER in try/except so init_database is idempotent and won't fail
+        # if the constraint already exists or if something else prevents adding it.
+        try:
+            cur.execute("""
+                ALTER TABLE registration_keys
+                ADD CONSTRAINT fk_registration_keys_used_by
+                FOREIGN KEY (used_by) REFERENCES users(id)
+            """)
+            print("DEBUG: Added FK registration_keys.used_by -> users.id")
+        except Exception as e:
+            print(f"DEBUG: Could not add FK registration_keys.used_by -> users.id (may already exist): {e}")
+
+        try:
+            cur.execute("""
+                ALTER TABLE users
+                ADD CONSTRAINT fk_users_registration_key_id
+                FOREIGN KEY (registration_key_id) REFERENCES registration_keys(id)
+            """)
+            print("DEBUG: Added FK users.registration_key_id -> registration_keys.id")
+        except Exception as e:
+            print(f"DEBUG: Could not add FK users.registration_key_id -> registration_keys.id (may already exist): {e}")
+
         conn.commit()
         cur.close()
         print("DEBUG: Database tables created/ensured.")
