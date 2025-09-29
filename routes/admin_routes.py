@@ -15,10 +15,6 @@ from services.key_service import generate_unique_key
 admin_bp = Blueprint('admin_bp', __name__)
 
 def resolve_username_to_id(username):
-    """
-    Resolve a public Telegram @username to numeric id using Telegram Bot API.
-    Returns numeric id or raises an exception.
-    """
     BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
     if not BOT_TOKEN:
         raise RuntimeError("TELEGRAM_BOT_TOKEN not configured")
@@ -55,12 +51,11 @@ def admin_dashboard():
     raw_users = get_users() or []
     raw_keys = get_registration_keys() or []
 
-    # Normalize and format user rows for display
+    # Format users
     display_users = []
     from datetime import datetime
     for u in raw_users:
         expiry = u.get('expiry_date')
-        expiry_dt = None
         expiry_str = ''
         days_left = None
         status = 'Unknown'
@@ -70,7 +65,6 @@ def admin_dashboard():
                     try:
                         expiry_dt = datetime.fromisoformat(expiry)
                     except Exception:
-                        # fallback if format differs
                         expiry_dt = expiry
                 else:
                     expiry_dt = expiry
@@ -88,7 +82,8 @@ def admin_dashboard():
 
         display_users.append({
             'telegram_user_id': u.get('telegram_user_id'),
-            'registration_key': u.get('registration_key'),
+            'registration_key_value': u.get('registration_key_value'),
+            'registration_key_id': u.get('registration_key_id'),
             'expiry_date': expiry_str,
             'days_left': days_left,
             'is_active': u.get('is_active', True),
@@ -96,28 +91,22 @@ def admin_dashboard():
             'created_at': u.get('created_at')
         })
 
-    # Normalize and format registration keys
+    # Format keys
     display_keys = []
     for k in raw_keys:
-        created_at = k.get('created_at')
-        created_str = ''
-        try:
-            if created_at:
-                if isinstance(created_at, str):
-                    created_str = created_at
-                else:
-                    created_str = created_at.strftime('%Y-%m-%d %H:%M:%S')
-        except Exception:
-            created_str = str(created_at)
-
         display_keys.append({
+            'id': k.get('id'),
             'key_value': k.get('key_value'),
             'duration_months': k.get('duration_months'),
+            'key_type_name': k.get('key_type_name'),
+            'allowed_telegram_user_id': k.get('allowed_telegram_user_id'),
             'created_by_username': k.get('created_by_username') or 'System',
             'used': bool(k.get('used')),
-            'used_by': k.get('used_by'),
-            'allowed_telegram_user_id': k.get('allowed_telegram_user_id'),
-            'created_at': created_str
+            'used_by_telegram': k.get('used_by_telegram'),
+            'used_at': k.get('used_at'),
+            'created_at': k.get('created_at'),
+            'is_active': k.get('is_active'),
+            'is_deleted': k.get('is_deleted')
         })
 
     return render_template('dashboard.html',
@@ -128,47 +117,62 @@ def admin_dashboard():
 @admin_bp.route('/admin/generate-key', methods=['POST'])
 def generate_key():
     """
-    Admin generates a registration key.
-    Accepts JSON or form data:
-      - duration (months)
-      - telegram_identifier (optional): numeric telegram id or @username
-    Returns JSON with success/error and helpful messages.
+    Accepts JSON or form:
+      - duration (months) or key_type_name
+      - telegram_identifier (optional) numeric id or @username
     """
-    # Authentication check
     if 'admin_id' not in session:
         return jsonify({'success': False, 'error': 'Not authenticated'}), 403
 
-    # Accept JSON or form-data for compatibility
     if request.is_json:
         data = request.get_json() or {}
     else:
         data = {
             'duration': request.form.get('duration') or request.values.get('duration'),
-            'telegram_identifier': request.form.get('telegram_identifier') or request.values.get('telegram_identifier')
+            'telegram_identifier': request.form.get('telegram_identifier') or request.values.get('telegram_identifier'),
+            'key_type_name': request.form.get('key_type_name') or request.values.get('key_type_name')
         }
 
-    # Parse duration safely
+    # Resolve duration/key_type
+    duration = 1
+    key_type_id = None
     try:
-        duration = int(data.get('duration', 1))
+        if data.get('key_type_name'):
+            # Try to find key_type id from DB
+            kt = None
+            rows = []
+            try:
+                rows = __import__('database.operations', fromlist=['execute_query']).execute_query(
+                    "SELECT id, duration_months FROM key_types WHERE name = %s", (data['key_type_name'],), fetch=True, dict_cursor=True
+                )
+            except Exception:
+                rows = []
+            if rows:
+                key_type_id = rows[0].get('id')
+                duration = rows[0].get('duration_months') or 1
+            else:
+                try:
+                    duration = int(data.get('duration', 1))
+                except Exception:
+                    duration = 1
+        else:
+            duration = int(data.get('duration', 1))
     except Exception:
         duration = 1
 
     identifier = data.get('telegram_identifier')
     allowed_id = None
-
-    # Resolve identifier if provided
     if identifier:
         identifier = str(identifier).strip()
         if identifier.startswith('@'):
             try:
                 allowed_id = resolve_username_to_id(identifier)
             except Exception as e:
-                # Return clear JSON error so frontend can surface it
                 return jsonify({'success': False, 'error': f'Cannot resolve username: {str(e)}'}), 400
         else:
             try:
                 allowed_id = int(identifier)
-            except ValueError:
+            except Exception:
                 return jsonify({'success': False, 'error': 'Invalid telegram identifier'}), 400
 
     # Generate unique key
@@ -178,17 +182,12 @@ def generate_key():
         print(f"ERROR: generate_unique_key failed: {e}", flush=True)
         return jsonify({'success': False, 'error': 'Failed to generate key'}), 500
 
-    # Insert key into DB, with allowed_telegram_user_id possibly None
     try:
-        # create_registration_key signature: (key_value, duration_months, created_by, allowed_telegram_user_id=None)
-        create_registration_key(key, duration, session['admin_id'], allowed_telegram_user_id=allowed_id)
+        create_registration_key(key, duration, session['admin_id'], allowed_telegram_user_id=allowed_id, key_type_id=key_type_id)
     except Exception as e:
-        # Log the exception to server logs (Railway logs)
         print(f"ERROR: create_registration_key failed: {e}", flush=True)
-        # Return JSON instead of HTML error page
         return jsonify({'success': False, 'error': 'Failed to create registration key on the server'}), 500
 
-    # Success response
     return jsonify({'success': True, 'key': key, 'allowed_telegram_user_id': allowed_id}), 200
 
 @admin_bp.route('/admin/logout')
@@ -199,7 +198,7 @@ def admin_logout():
 @admin_bp.route('/admin/create-first-admin')
 def create_first_admin():
     username = "admin"
-    password = "admin123"  # Change this after first login
+    password = "admin123"  # Change after first login
 
     existing = get_admin_by_username(username)
     if existing:

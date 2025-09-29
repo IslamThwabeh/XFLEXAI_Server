@@ -16,6 +16,7 @@
     .controls { margin-bottom: 12px; }
     .key-box { background:#fafafa; padding:8px; border:1px dashed #ccc; display:inline-block; margin-left:12px; }
     button { padding:6px 10px; cursor:pointer; }
+    form.inline { display:inline-block; margin-left:10px; }
   </style>
 </head>
 <body>
@@ -30,10 +31,18 @@
 
   <section class="controls">
     <h3>Generate Registration Key</h3>
-    <p>Click the button below to generate a short key (admin only).</p>
-    <button id="genKeyBtn">Generate Key</button>
-    <span id="generatedKey" class="key-box" aria-live="polite"></span>
-    <div class="small">Optionally enter a Telegram ID or @username below to bind a key when creating it (not required).</div>
+    <p>Generate a short key for a license. Optionally provide a Telegram ID or @username to bind the key (or choose a key type).</p>
+    <div>
+      <label>Duration months:
+        <input id="durationInput" type="number" min="1" value="1" style="width:80px">
+      </label>
+      <label style="margin-left:8px">Telegram ID or @username:
+        <input id="telegramIdentifier" type="text" placeholder="@username or numeric id" style="width:180px">
+      </label>
+      <button id="genKeyBtn">Generate Key</button>
+      <span id="generatedKey" class="key-box" aria-live="polite"></span>
+    </div>
+    <div class="small">You can bind the key now or leave it unbound for the first redeemer to claim it.</div>
   </section>
 
   <section>
@@ -53,7 +62,7 @@
           {% for u in users %}
             <tr>
               <td>{{ u.telegram_user_id }}</td>
-              <td>{{ u.registration_key or '—' }}</td>
+              <td>{{ u.registration_key_value or '—' }}</td>
               <td>{{ u.expiry_date or 'N/A' }}</td>
               <td>{{ u.days_left if u.days_left is not none else '—' }}</td>
               <td>
@@ -81,11 +90,13 @@
         <tr>
           <th>Key</th>
           <th>Duration (months)</th>
+          <th>Type</th>
           <th>Allowed Telegram ID</th>
           <th>Created By</th>
           <th>Used</th>
-          <th>Used By (user id)</th>
+          <th>Used By (telegram)</th>
           <th>Created Date</th>
+          <th>Active</th>
         </tr>
       </thead>
       <tbody>
@@ -94,43 +105,46 @@
             <tr>
               <td>{{ k.key_value }}</td>
               <td>{{ k.duration_months }}</td>
+              <td>{{ k.key_type_name or 'custom' }}</td>
               <td>{{ k.allowed_telegram_user_id or 'Unbound' }}</td>
               <td>{{ k.created_by_username }}</td>
               <td>{{ 'Yes' if k.used else 'No' }}</td>
-              <td>{{ k.used_by or '—' }}</td>
+              <td>{{ k.used_by_telegram or '—' }}</td>
               <td>{{ k.created_at or 'N/A' }}</td>
+              <td>{{ 'Yes' if k.is_active else 'No' }}</td>
             </tr>
           {% endfor %}
         {% else %}
-          <tr><td colspan="7" class="small">No registration keys generated yet.</td></tr>
+          <tr><td colspan="9" class="small">No registration keys generated yet.</td></tr>
         {% endif %}
       </tbody>
     </table>
   </section>
 
 <script>
-  // Simple JS to call generate-key and display response.
-  // It sends JSON and includes cookies so session auth is preserved.
-  document.getElementById('genKeyBtn').addEventListener('click', async function () {
-    // Optionally, you could prompt admin for telegram_identifier; left simple here.
-    const payload = { duration: 1 }; // default 1 month
-    try {
-      const res = await fetch('/admin/generate-key', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        alert('Failed to generate key: ' + (data && data.error ? data.error : res.statusText));
-        return;
-      }
-      document.getElementById('generatedKey').textContent = data.key;
-    } catch (err) {
-      alert('Error generating key: ' + err.message);
+document.getElementById('genKeyBtn').addEventListener('click', async function () {
+  const duration = parseInt(document.getElementById('durationInput').value) || 1;
+  const telegram_identifier = document.getElementById('telegramIdentifier').value || null;
+  const payload = { duration: duration, telegram_identifier: telegram_identifier };
+  try {
+    const res = await fetch('/admin/generate-key', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      alert('Failed to generate key: ' + (data && data.error ? data.error : res.statusText));
+      return;
     }
-  });
+    document.getElementById('generatedKey').textContent = data.key;
+    // Refresh page to show new key in table
+    setTimeout(()=> location.reload(), 800);
+  } catch (err) {
+    alert('Error generating key: ' + err.message);
+  }
+});
 </script>
 </body>
 </html>
