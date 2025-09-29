@@ -16,7 +16,7 @@
     .controls { margin-bottom: 12px; }
     .key-box { background:#fafafa; padding:8px; border:1px dashed #ccc; display:inline-block; margin-left:12px; }
     button { padding:6px 10px; cursor:pointer; }
-    form.inline { display:inline-block; margin-left:10px; }
+    input, select { padding:6px; margin-left:6px; }
   </style>
 </head>
 <body>
@@ -31,31 +31,33 @@
 
   <section class="controls">
     <h3>Generate Registration Key</h3>
-    <p>Generate a short key for a license. Optionally provide a Telegram ID or @username to bind the key (or choose a key type).</p>
+    <p>Generate a short key for a license. Optionally provide a Telegram ID or @username to pre-bind the key (recommended: use numeric id).</p>
     <div>
-      <label>Duration months:
-        <input id="durationInput" type="number" min="1" value="1" style="width:80px">
+      <label>Duration:
+        <select id="durationSelect">
+          <option value="1">1 month</option>
+          <option value="3">3 months</option>
+          <option value="6">6 months</option>
+          <option value="12">12 months</option>
+        </select>
       </label>
-      <label style="margin-left:8px">Telegram ID or @username:
-        <input id="telegramIdentifier" type="text" placeholder="@username or numeric id" style="width:180px">
+
+      <label style="margin-left:12px">Telegram ID or @username:
+        <input id="telegramIdentifier" type="text" placeholder="@username or numeric id" style="width:200px">
       </label>
+
       <button id="genKeyBtn">Generate Key</button>
       <span id="generatedKey" class="key-box" aria-live="polite"></span>
     </div>
-    <div class="small">You can bind the key now or leave it unbound for the first redeemer to claim it.</div>
+    <div class="small">If you leave the Telegram ID field blank the key will be unbound and the first redeemer will claim it.</div>
   </section>
 
+  <!-- Users and keys tables unchanged (same structure as before) -->
   <section>
     <h3>Registered Users</h3>
     <table>
       <thead>
-        <tr>
-          <th>Telegram ID</th>
-          <th>Registration Key</th>
-          <th>Expiry Date</th>
-          <th>Days Left</th>
-          <th>Status</th>
-        </tr>
+        <tr><th>Telegram ID</th><th>Registration Key</th><th>Expiry Date</th><th>Days Left</th><th>Status</th></tr>
       </thead>
       <tbody>
         {% if users and users|length > 0 %}
@@ -66,13 +68,9 @@
               <td>{{ u.expiry_date or 'N/A' }}</td>
               <td>{{ u.days_left if u.days_left is not none else '—' }}</td>
               <td>
-                {% if u.status == 'Active' %}
-                  <span class="success">Active</span>
-                {% elif u.status == 'Expired' %}
-                  <span class="danger">Expired</span>
-                {% else %}
-                  <span class="small">{{ u.status }}</span>
-                {% endif %}
+                {% if u.status == 'Active' %}<span class="success">Active</span>
+                {% elif u.status == 'Expired' %}<span class="danger">Expired</span>
+                {% else %}<span class="small">{{ u.status }}</span>{% endif %}
               </td>
             </tr>
           {% endfor %}
@@ -88,15 +86,8 @@
     <table>
       <thead>
         <tr>
-          <th>Key</th>
-          <th>Duration (months)</th>
-          <th>Type</th>
-          <th>Allowed Telegram ID</th>
-          <th>Created By</th>
-          <th>Used</th>
-          <th>Used By (telegram)</th>
-          <th>Created Date</th>
-          <th>Active</th>
+          <th>Key</th><th>Duration (months)</th><th>Type</th><th>Allowed Telegram ID</th>
+          <th>Created By</th><th>Used</th><th>Used By (telegram)</th><th>Created Date</th><th>Active</th>
         </tr>
       </thead>
       <tbody>
@@ -123,24 +114,25 @@
 
 <script>
 document.getElementById('genKeyBtn').addEventListener('click', async function () {
-  const duration = parseInt(document.getElementById('durationInput').value) || 1;
+  const duration = parseInt(document.getElementById('durationSelect').value, 10) || 1;
   const telegram_identifier = document.getElementById('telegramIdentifier').value || null;
   const payload = { duration: duration, telegram_identifier: telegram_identifier };
   try {
     const res = await fetch('/admin/generate-key', {
       method: 'POST',
-      credentials: 'same-origin',
+      credentials: 'same-origin',          // ensure cookies/session are sent
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
+    // Always try to parse JSON; server will return JSON even on errors (see server change)
     const data = await res.json();
     if (!res.ok || !data.success) {
       alert('Failed to generate key: ' + (data && data.error ? data.error : res.statusText));
       return;
     }
     document.getElementById('generatedKey').textContent = data.key;
-    // Refresh page to show new key in table
-    setTimeout(()=> location.reload(), 800);
+    // refresh keys list after a short delay
+    setTimeout(()=> location.reload(), 700);
   } catch (err) {
     alert('Error generating key: ' + err.message);
   }

@@ -117,78 +117,69 @@ def admin_dashboard():
 @admin_bp.route('/admin/generate-key', methods=['POST'])
 def generate_key():
     """
-    Accepts JSON or form:
-      - duration (months) or key_type_name
-      - telegram_identifier (optional) numeric id or @username
+    Create a registration key. Accepts JSON or form:
+      - duration (months)
+      - telegram_identifier (optional): numeric id or @username
+    Returns JSON and logs errors for debugging.
     """
     if 'admin_id' not in session:
         return jsonify({'success': False, 'error': 'Not authenticated'}), 403
 
-    if request.is_json:
-        data = request.get_json() or {}
-    else:
-        data = {
-            'duration': request.form.get('duration') or request.values.get('duration'),
-            'telegram_identifier': request.form.get('telegram_identifier') or request.values.get('telegram_identifier'),
-            'key_type_name': request.form.get('key_type_name') or request.values.get('key_type_name')
-        }
-
-    # Resolve duration/key_type
-    duration = 1
-    key_type_id = None
     try:
-        if data.get('key_type_name'):
-            # Try to find key_type id from DB
-            kt = None
-            rows = []
-            try:
-                rows = __import__('database.operations', fromlist=['execute_query']).execute_query(
-                    "SELECT id, duration_months FROM key_types WHERE name = %s", (data['key_type_name'],), fetch=True, dict_cursor=True
-                )
-            except Exception:
-                rows = []
-            if rows:
-                key_type_id = rows[0].get('id')
-                duration = rows[0].get('duration_months') or 1
+        if request.is_json:
+            data = request.get_json() or {}
+        else:
+            data = {
+                'duration': request.form.get('duration') or request.values.get('duration'),
+                'telegram_identifier': request.form.get('telegram_identifier') or request.values.get('telegram_identifier')
+            }
+
+        # Log incoming payload for debugging
+        print(f"DEBUG: generate-key payload: {data}", flush=True)
+
+        # Parse duration
+        try:
+            duration = int(data.get('duration', 1))
+        except Exception:
+            duration = 1
+
+        identifier = data.get('telegram_identifier')
+        allowed_id = None
+        if identifier:
+            identifier = str(identifier).strip()
+            # only resolve if starts with @ (public username)
+            if identifier.startswith('@'):
+                try:
+                    allowed_id = resolve_username_to_id(identifier)
+                except Exception as e:
+                    print(f"ERROR: resolve_username_to_id failed: {e}", flush=True)
+                    return jsonify({'success': False, 'error': f'Cannot resolve username: {str(e)}'}), 400
             else:
                 try:
-                    duration = int(data.get('duration', 1))
+                    allowed_id = int(identifier)
                 except Exception:
-                    duration = 1
-        else:
-            duration = int(data.get('duration', 1))
-    except Exception:
-        duration = 1
+                    return jsonify({'success': False, 'error': 'Invalid telegram identifier (must be numeric or @username)'}), 400
 
-    identifier = data.get('telegram_identifier')
-    allowed_id = None
-    if identifier:
-        identifier = str(identifier).strip()
-        if identifier.startswith('@'):
-            try:
-                allowed_id = resolve_username_to_id(identifier)
-            except Exception as e:
-                return jsonify({'success': False, 'error': f'Cannot resolve username: {str(e)}'}), 400
-        else:
-            try:
-                allowed_id = int(identifier)
-            except Exception:
-                return jsonify({'success': False, 'error': 'Invalid telegram identifier'}), 400
-
-    # Generate unique key
-    try:
+        # generate unique key
         key = generate_unique_key()
-    except Exception as e:
-        print(f"ERROR: generate_unique_key failed: {e}", flush=True)
-        return jsonify({'success': False, 'error': 'Failed to generate key'}), 500
 
-    try:
-        create_registration_key(key, duration, session['admin_id'], allowed_telegram_user_id=allowed_id, key_type_id=key_type_id)
-    except Exception as e:
-        print(f"ERROR: create_registration_key failed: {e}", flush=True)
-        return jsonify({'success': False, 'error': 'Failed to create registration key on the server'}), 500
+        # insert into DB
+        try:
+            create_registration_key(key, duration, session['admin_id'], allowed_telegram_user_id=allowed_id)
+        except Exception as e:
+            # log full exception for Railway logs
+            import traceback
+            traceback_str = traceback.format_exc()
+            print("ERROR: create_registration_key exception:\n", traceback_str, flush=True)
+            return jsonify({'success': False, 'error': 'Server error while creating key'}), 500
 
-    return jsonify({'success': True, 'key': key, 'allowed_telegram_user_id': allowed_id}), 200
+        return jsonify({'success': True, 'key': key, 'allowed_telegram_user_id': allowed_id}), 200
+
+    except Exception as e:
+        import traceback
+        traceback_str = traceback.format_exc()
+        print("UNEXPECTED ERROR in generate_key:\n", traceback_str, flush=True)
+        return jsonify({'success': False, 'error': 'Unexpected server error'}), 500
 
 @admin_bp.route('/admin/logout')
 def admin_logout():
@@ -207,3 +198,5 @@ def create_first_admin():
     hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     new_id = create_admin(username, hashed_password)
     return f"Admin user created! Username: {username}, Password: {password} - PLEASE CHANGE PASSWORD AFTER LOGIN!"
+
+
