@@ -1,7 +1,7 @@
 # app.py - main entry point with enhanced security and session management
 import os
 from datetime import datetime, timedelta
-from flask import Flask, session, request, g
+from flask import Flask, session, request, g, redirect, url_for
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFProtect
@@ -17,10 +17,10 @@ app.config.from_object(Config)
 # Initialize security extensions
 csrf = CSRFProtect(app)
 limiter = Limiter(
-    app,
     key_func=get_remote_address,
     default_limits=["200 per day", "50 per hour"]
 )
+limiter.init_app(app)
 
 # Session configuration
 app.permanent_session_lifetime = Config.PERMANENT_SESSION_LIFETIME
@@ -30,12 +30,12 @@ app.permanent_session_lifetime = Config.PERMANENT_SESSION_LIFETIME
 def check_session_timeout():
     """Check and handle session timeout"""
     # Skip for API routes and static files
-    if (request.endpoint and 
-        (request.endpoint.startswith('api_bp.') or 
+    if (request.endpoint and
+        (request.endpoint.startswith('api_bp.') or
          request.endpoint.startswith('static') or
          request.endpoint == 'admin_bp.admin_login')):
         return
-    
+
     # Check if admin session exists and is valid
     if 'admin_id' in session:
         if 'last_activity' in session:
@@ -44,7 +44,7 @@ def check_session_timeout():
                 session.clear()
                 if request.endpoint == 'admin_bp.admin_dashboard':
                     return redirect(url_for('admin_bp.admin_login', message='Session expired'))
-        
+
         # Update last activity
         session['last_activity'] = datetime.now().isoformat()
         session.permanent = True
@@ -73,4 +73,3 @@ def ratelimit_handler(e):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=os.environ.get('FLASK_ENV') == 'development')
-
