@@ -41,11 +41,11 @@ def admin_login():
     # Clear any existing session
     if request.method == 'GET' and 'admin_id' in session:
         session.clear()
-    
+
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
-        
+
         if not username or not password:
             return render_template('login.html', error='Username and password are required')
 
@@ -58,10 +58,10 @@ def admin_login():
                 session['login_time'] = datetime.now().isoformat()
                 session['last_activity'] = datetime.now().isoformat()
                 session.permanent = True
-                
+
                 # Log successful login
                 print(f"INFO: Admin '{username}' logged in successfully at {datetime.now()}")
-                
+
                 return redirect(url_for('admin_bp.admin_dashboard'))
             else:
                 # Log failed login attempt
@@ -83,7 +83,7 @@ def admin_dashboard():
     try:
         raw_users = get_users() or []
         raw_keys = get_registration_keys() or []
-        
+
         # Format users with enhanced information
         display_users = []
         for u in raw_users:
@@ -92,7 +92,7 @@ def admin_dashboard():
             days_left = None
             status = 'Unknown'
             status_class = 'secondary'
-            
+
             try:
                 if expiry:
                     if isinstance(expiry, str):
@@ -102,11 +102,11 @@ def admin_dashboard():
                             expiry_dt = expiry
                     else:
                         expiry_dt = expiry
-                        
+
                     if hasattr(expiry_dt, 'strftime'):
                         expiry_str = expiry_dt.strftime('%Y-%m-%d %H:%M:%S')
                         days_left = (expiry_dt - datetime.utcnow()).days
-                        
+
                         if expiry_dt > datetime.utcnow() and u.get('is_active', True):
                             status = 'Active'
                             status_class = 'success' if days_left > 7 else 'warning'
@@ -142,7 +142,7 @@ def admin_dashboard():
                 created_str = created_date.strftime('%Y-%m-%d %H:%M')
             else:
                 created_str = str(created_date) if created_date else 'N/A'
-                
+
             display_keys.append({
                 'id': k.get('id'),
                 'key_value': k.get('key_value'),
@@ -174,7 +174,7 @@ def admin_dashboard():
                              keys=display_keys,
                              stats=stats,
                              session_expires=session.get('last_activity'))
-                             
+
     except Exception as e:
         print(f"ERROR: Dashboard error: {e}")
         return render_template('dashboard.html', error='Error loading dashboard data')
@@ -224,18 +224,18 @@ def generate_key():
         # Create registration key in database
         try:
             create_registration_key(key, duration, session['admin_id'], allowed_telegram_user_id=allowed_id)
-            
+
             # Log key creation
             admin_username = session.get('admin_username', 'Unknown')
             print(f"INFO: Key '{key}' created by admin '{admin_username}' for {duration} months")
-            
+
             return jsonify({
-                'success': True, 
-                'key': key, 
+                'success': True,
+                'key': key,
                 'duration': duration,
                 'allowed_telegram_user_id': allowed_id
             }), 200
-            
+
         except Exception as e:
             print(f"ERROR: create_registration_key failed: {e}")
             return jsonify({'success': False, 'error': 'Failed to create key in database'}), 500
@@ -249,15 +249,34 @@ def session_info():
     """Get current session information"""
     if not require_admin_session():
         return jsonify({'authenticated': False})
-    
+
     last_activity = session.get('last_activity')
     if last_activity:
         last_activity_dt = datetime.fromisoformat(last_activity)
         time_left = (last_activity_dt + timedelta(minutes=15) - datetime.now()).total_seconds()
     else:
         time_left = 0
-    
+
     return jsonify({
         'authenticated': True,
-        'username
+        'username': session.get('admin_username'),
+        'login_time': session.get('login_time'),
+        'last_activity': session.get('last_activity'),
+        'session_time_left_seconds': max(0, int(time_left))
+    })
 
+# Add logout route
+@admin_bp.route('/admin/logout')
+def admin_logout():
+    """Logout admin and clear session"""
+    session.clear()
+    return redirect(url_for('admin_bp.admin_login', message='Successfully logged out'))
+
+# Add session keep-alive route
+@admin_bp.route('/admin/keep-alive', methods=['POST'])
+def keep_alive():
+    """Update session activity to prevent timeout"""
+    if require_admin_session():
+        session['last_activity'] = datetime.now().isoformat()
+        return jsonify({'success': True})
+    return jsonify({'success': False}), 401
