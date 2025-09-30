@@ -14,6 +14,14 @@ from routes.api_routes import api_bp
 app = Flask(__name__)
 app.config.from_object(Config)
 
+# Auto-create admin if it doesn't exist (add this to app.py)
+try:
+    from routes.create_admin import main as create_admin_main
+    create_admin_main()
+    print("Admin creation script executed on startup")
+except Exception as e:
+    print(f"Admin creation warning: {e}")
+
 # Initialize security extensions
 csrf = CSRFProtect(app)
 limiter = Limiter(
