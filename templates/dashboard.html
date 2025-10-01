@@ -1,338 +1,519 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>Admin Dashboard</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <style>
-    body { 
-      font-family: Arial, Helvetica, sans-serif; 
-      padding: 20px; 
-      background-color: #f8f9fa;
-    }
-    header { 
-      display:flex; 
-      justify-content:space-between; 
-      align-items:center; 
-      margin-bottom:20px;
-      background: white;
-      padding: 15px 20px;
-      border-radius: 8px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    table { 
-      width:100%; 
-      border-collapse: collapse; 
-      margin-bottom: 24px;
-      background: white;
-      border-radius: 8px;
-      overflow: hidden;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    th, td { 
-      border:1px solid #ddd; 
-      padding:12px 8px; 
-      text-align:left;
-      vertical-align: middle;
-    }
-    th { 
-      background:#f5f5f5; 
-      font-weight: 600;
-    }
-    .success { color: #0a7; font-weight: 500; }
-    .danger { color: #c00; font-weight: 500; }
-    .small { font-size: 0.9em; color:#666; }
-    .controls { 
-      margin-bottom: 20px;
-      background: white;
-      padding: 20px;
-      border-radius: 8px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    
-    /* Fixed: Better key display styling */
-    .key-box { 
-      background:#e8f4fd; 
-      padding:10px 15px; 
-      border:2px solid #0066cc; 
-      display:inline-block; 
-      margin-left:12px;
-      border-radius: 6px;
-      font-family: 'Courier New', monospace;
-      font-weight: bold;
-      font-size: 16px;
-      color: #0066cc;
-      min-width: 120px;
-      text-align: center;
-    }
-    
-    /* Fixed: Key column styling to show full key */
-    .key-column {
-      font-family: 'Courier New', monospace;
-      font-weight: bold;
-      font-size: 14px;
-      background: #f8f9fa;
-      padding: 8px !important;
-      min-width: 120px;
-      word-break: keep-all;
-      white-space: nowrap;
-    }
-    
-    button { 
-      padding:8px 16px; 
-      cursor:pointer;
-      background: #007bff;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      font-weight: 500;
-    }
-    button:hover {
-      background: #0056b3;
-    }
-    button:disabled {
-      background: #6c757d;
-      cursor: not-allowed;
-    }
-    input, select { 
-      padding:8px; 
-      margin-left:6px;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-    }
-    
-    .copy-key-btn {
-      background: #28a745;
-      color: white;
-      border: none;
-      padding: 5px 10px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 12px;
-      margin-left: 8px;
-    }
-    .copy-key-btn:hover {
-      background: #218838;
-    }
-    
-    .key-generated-success {
-      background: #d4edda;
-      border: 1px solid #c3e6cb;
-      color: #155724;
-      padding: 10px 15px;
-      border-radius: 4px;
-      margin-top: 10px;
-      display: none;
-    }
-    
-    .section-card {
-      background: white;
-      padding: 20px;
-      margin-bottom: 20px;
-      border-radius: 8px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - XFLEXAI</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --primary-dark: #1d4ed8;
+            --secondary-color: #64748b;
+            --success-color: #059669;
+            --danger-color: #dc2626;
+            --warning-color: #d97706;
+            --info-color: #0891b2;
+            --dark-color: #1e293b;
+            --light-color: #f8fafc;
+            --border-color: #e2e8f0;
+            --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            --border-radius: 8px;
+            --border-radius-lg: 12px;
+        }
+
+        body {
+            background: var(--light-color);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: var(--dark-color);
+        }
+
+        .navbar-custom {
+            background: white;
+            box-shadow: var(--shadow-md);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .navbar-brand {
+            font-weight: 700;
+            color: var(--primary-color) !important;
+            font-size: 1.25rem;
+        }
+
+        .navbar-brand i {
+            color: var(--primary-color);
+            margin-right: 8px;
+        }
+
+        .user-menu {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .session-timer {
+            background: var(--warning-color);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .session-timer.warning {
+            background: var(--danger-color);
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+
+        .main-container {
+            padding: 2rem 0;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: var(--border-radius-lg);
+            padding: 1.5rem;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border-color);
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .stat-card .stat-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1rem;
+        }
+
+        .stat-card .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+        }
+
+        .stat-card .stat-label {
+            color: var(--secondary-color);
+            font-weight: 500;
+        }
+
+        .card {
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-lg);
+            box-shadow: var(--shadow);
+        }
+
+        .card-header {
+            background: white;
+            border-bottom: 1px solid var(--border-color);
+            font-weight: 600;
+            padding: 1rem 1.5rem;
+        }
+
+        .table th {
+            border-top: none;
+            font-weight: 600;
+            color: var(--secondary-color);
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .badge {
+            font-weight: 500;
+            padding: 0.375rem 0.75rem;
+        }
+
+        .btn-primary {
+            background: var(--primary-color);
+            border-color: var(--primary-color);
+            font-weight: 500;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+            border-color: var(--primary-dark);
+        }
+
+        .generate-key-form {
+            background: white;
+            border-radius: var(--border-radius-lg);
+            padding: 1.5rem;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border-color);
+        }
+
+        .loading-spinner {
+            display: none;
+        }
+    </style>
 </head>
 <body>
-  <header>
-    <div>
-      <h2>Welcome, {{ admin_username or "Admin" }}!</h2>
-    </div>
-    <div>
-      <a href="/admin/logout" style="color: #dc3545; text-decoration: none; font-weight: 500;">Logout</a>
-    </div>
-  </header>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-custom">
+        <div class="container">
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-robot"></i>
+                XFLEXAI Admin
+            </a>
+            
+            <div class="user-menu">
+                <div id="sessionTimer" class="session-timer">
+                    <i class="fas fa-clock me-1"></i>
+                    <span id="timeLeft">15:00</span>
+                </div>
+                <div class="dropdown">
+                    <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                        <i class="fas fa-user me-1"></i>
+                        {{ admin_username }}
+                    </button>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="{{ url_for('admin_bp.admin_logout') }}">
+                            <i class="fas fa-sign-out-alt me-2"></i>Logout
+                        </a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </nav>
 
-  <section class="controls">
-    <h3>Generate Registration Key</h3>
-    <p>Generate a short key for a license. Optionally provide a Telegram ID or @username to pre-bind the key (recommended: use numeric id).</p>
-    <div>
-      <label>Duration:
-        <select id="durationSelect">
-          <option value="1">1 month</option>
-          <option value="3">3 months</option>
-          <option value="6">6 months</option>
-          <option value="12">12 months</option>
-        </select>
-      </label>
-
-      <label style="margin-left:12px">Telegram ID or @username:
-        <input id="telegramIdentifier" type="text" placeholder="@username or numeric id" style="width:200px">
-      </label>
-
-      <button id="genKeyBtn">Generate Key</button>
-      <span id="generatedKey" class="key-box" aria-live="polite" style="display: none;"></span>
-      <button id="copyKeyBtn" class="copy-key-btn" style="display: none;" onclick="copyKey()">Copy Key</button>
-    </div>
-    <div class="small">If you leave the Telegram ID field blank the key will be unbound and the first redeemer will claim it.</div>
-    
-    <div id="keyGeneratedSuccess" class="key-generated-success">
-      <strong>✓ Key Generated Successfully!</strong> Please copy the key above. 
-      <button onclick="refreshTable()" style="margin-left: 10px; padding: 5px 10px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer;">Refresh Table</button>
-    </div>
-  </section>
-
-  <section class="section-card">
-    <h3>Registered Users</h3>
-    <table>
-      <thead>
-        <tr><th>Telegram ID</th><th>Registration Key</th><th>Expiry Date</th><th>Days Left</th><th>Status</th></tr>
-      </thead>
-      <tbody>
-        {% if users and users|length > 0 %}
-          {% for u in users %}
-            <tr>
-              <td>{{ u.telegram_user_id }}</td>
-              <td class="key-column">{{ u.registration_key_value or '—' }}</td>
-              <td>{{ u.expiry_date or 'N/A' }}</td>
-              <td>{{ u.days_left if u.days_left is not none else '—' }}</td>
-              <td>
-                {% if u.status == 'Active' %}<span class="success">Active</span>
-                {% elif u.status == 'Expired' %}<span class="danger">Expired</span>
-                {% else %}<span class="small">{{ u.status }}</span>{% endif %}
-              </td>
-            </tr>
-          {% endfor %}
-        {% else %}
-          <tr><td colspan="5" class="small">No registered users yet.</td></tr>
+    <!-- Main Content -->
+    <div class="container main-container">
+        {% if error %}
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            {{ error }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
         {% endif %}
-      </tbody>
-    </table>
-  </section>
 
-  <section class="section-card">
-    <h3>Generated Keys</h3>
-    <table>
-      <thead>
-        <tr>
-          <th>Key</th><th>Duration (months)</th><th>Type</th><th>Allowed Telegram ID</th>
-          <th>Created By</th><th>Used</th><th>Used By (telegram)</th><th>Created Date</th><th>Active</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% if keys and keys|length > 0 %}
-          {% for k in keys %}
-            <tr>
-              <td class="key-column">{{ k.key_value }}</td>
-              <td>{{ k.duration_months }}</td>
-              <td>{{ k.key_type_name or 'custom' }}</td>
-              <td>{{ k.allowed_telegram_user_id or 'Unbound' }}</td>
-              <td>{{ k.created_by_username }}</td>
-              <td>{{ 'Yes' if k.used else 'No' }}</td>
-              <td>{{ k.used_by_telegram or '—' }}</td>
-              <td>{{ k.created_at or 'N/A' }}</td>
-              <td>{{ 'Yes' if k.is_active else 'No' }}</td>
-            </tr>
-          {% endfor %}
-        {% else %}
-          <tr><td colspan="9" class="small">No registration keys generated yet.</td></tr>
-        {% endif %}
-      </tbody>
-    </table>
-  </section>
+        <!-- Statistics Cards -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon" style="background: rgba(37, 99, 235, 0.1); color: var(--primary-color);">
+                    <i class="fas fa-users fa-lg"></i>
+                </div>
+                <div class="stat-value">{{ stats.total_users }}</div>
+                <div class="stat-label">Total Users</div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-icon" style="background: rgba(5, 150, 105, 0.1); color: var(--success-color);">
+                    <i class="fas fa-user-check fa-lg"></i>
+                </div>
+                <div class="stat-value">{{ stats.active_users }}</div>
+                <div class="stat-label">Active Users</div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-icon" style="background: rgba(220, 38, 38, 0.1); color: var(--danger-color);">
+                    <i class="fas fa-user-times fa-lg"></i>
+                </div>
+                <div class="stat-value">{{ stats.expired_users }}</div>
+                <div class="stat-label">Expired Users</div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-icon" style="background: rgba(217, 119, 6, 0.1); color: var(--warning-color);">
+                    <i class="fas fa-key fa-lg"></i>
+                </div>
+                <div class="stat-value">{{ stats.total_keys }}</div>
+                <div class="stat-label">Total Keys</div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-icon" style="background: rgba(8, 145, 178, 0.1); color: var(--info-color);">
+                    <i class="fas fa-key fa-lg"></i>
+                </div>
+                <div class="stat-value">{{ stats.unused_keys }}</div>
+                <div class="stat-label">Unused Keys</div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-icon" style="background: rgba(100, 116, 139, 0.1); color: var(--secondary-color);">
+                    <i class="fas fa-key fa-lg"></i>
+                </div>
+                <div class="stat-value">{{ stats.used_keys }}</div>
+                <div class="stat-label">Used Keys</div>
+            </div>
+        </div>
 
-<script>
-// Global variable to store the generated key
-let currentGeneratedKey = '';
+        <!-- Generate Key Form -->
+        <div class="generate-key-form mb-4">
+            <h5 class="mb-3"><i class="fas fa-plus-circle me-2"></i>Generate New Key</h5>
+            <form id="generateKeyForm">
+	        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label for="duration" class="form-label">Duration (months)</label>
+                        <select class="form-select" id="duration" name="duration" required>
+                            <option value="1">1 Month</option>
+                            <option value="3">3 Months</option>
+                            <option value="6">6 Months</option>
+                            <option value="12">12 Months</option>
+                        </select>
+                    </div>
+                    <div class="col-md-5">
+                        <label for="telegram_identifier" class="form-label">Telegram User (Optional)</label>
+                        <input type="text" class="form-control" id="telegram_identifier" name="telegram_identifier" 
+                               placeholder="@username or user_id">
+                        <div class="form-text">Leave empty for public key</div>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">&nbsp;</label>
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="fas fa-key me-2"></i>Generate Key
+                        </button>
+                    </div>
+                </div>
+            </form>
+            
+            <div id="keyResult" class="mt-3" style="display: none;">
+                <div class="alert alert-success">
+                    <h6 class="alert-heading">Key Generated Successfully!</h6>
+                    <code id="generatedKey" class="fs-6"></code>
+                    <button class="btn btn-sm btn-outline-success ms-2" onclick="copyKey()">
+                        <i class="fas fa-copy"></i> Copy
+                    </button>
+                </div>
+            </div>
+            
+            <div class="loading-spinner text-center mt-3" id="loadingSpinner">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Generating key...</span>
+                </div>
+            </div>
+        </div>
 
-document.getElementById('genKeyBtn').addEventListener('click', async function () {
-  const duration = parseInt(document.getElementById('durationSelect').value, 10) || 1;
-  const telegram_identifier = document.getElementById('telegramIdentifier').value || null;
-  const payload = { duration: duration, telegram_identifier: telegram_identifier };
-  
-  // Disable button and show loading state
-  const btn = this;
-  const originalText = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = 'Generating...';
-  
-  try {
-    const res = await fetch('/admin/generate-key', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    
-    const data = await res.json();
-    if (!res.ok || !data.success) {
-      alert('Failed to generate key: ' + (data && data.error ? data.error : res.statusText));
-      return;
-    }
-    
-    // Store the key and display it
-    currentGeneratedKey = data.key;
-    const keyDisplay = document.getElementById('generatedKey');
-    const copyBtn = document.getElementById('copyKeyBtn');
-    const successMsg = document.getElementById('keyGeneratedSuccess');
-    
-    keyDisplay.textContent = currentGeneratedKey;
-    keyDisplay.style.display = 'inline-block';
-    copyBtn.style.display = 'inline-block';
-    successMsg.style.display = 'block';
-    
-    // Auto-select the key text for easy copying
-    setTimeout(() => {
-      keyDisplay.click();
-      selectText(keyDisplay);
-    }, 100);
-    
-    // Clear telegram identifier input
-    document.getElementById('telegramIdentifier').value = '';
-    
-  } catch (err) {
-    alert('Error generating key: ' + err.message);
-  } finally {
-    // Re-enable button
-    btn.disabled = false;
-    btn.textContent = originalText;
-  }
-});
+        <div class="row">
+            <!-- Users Table -->
+            <div class="col-lg-6 mb-4">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span><i class="fas fa-users me-2"></i>Registered Users</span>
+                        <span class="badge bg-primary">{{ users|length }}</span>
+                    </div>
+                    <div class="card-body p-0">
+                        {% if users %}
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Telegram ID</th>
+                                        <th>Status</th>
+                                        <th>Expires</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for user in users %}
+                                    <tr>
+                                        <td>
+                                            <strong>{{ user.telegram_user_id }}</strong>
+                                            {% if user.registration_key_value %}
+                                            <br><small class="text-muted">Key: {{ user.registration_key_value[:8] }}...</small>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <span class="badge bg-{{ user.status_class }}">{{ user.status }}</span>
+                                            {% if user.days_left is not none %}
+                                            <br><small>{{ user.days_left }} days left</small>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ user.expiry_date }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="text-center py-4">
+                            <i class="fas fa-users fa-2x text-muted mb-2"></i>
+                            <p class="text-muted">No users registered yet</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
 
-// Function to copy the key to clipboard
-function copyKey() {
-  if (currentGeneratedKey) {
-    navigator.clipboard.writeText(currentGeneratedKey).then(function() {
-      const copyBtn = document.getElementById('copyKeyBtn');
-      const originalText = copyBtn.textContent;
-      copyBtn.textContent = 'Copied!';
-      copyBtn.style.background = '#28a745';
-      
-      setTimeout(() => {
-        copyBtn.textContent = originalText;
-        copyBtn.style.background = '#28a745';
-      }, 2000);
-    }).catch(function() {
-      // Fallback for older browsers
-      const keyDisplay = document.getElementById('generatedKey');
-      selectText(keyDisplay);
-      alert('Key selected! Press Ctrl+C (or Cmd+C) to copy: ' + currentGeneratedKey);
-    });
-  }
-}
+            <!-- Keys Table -->
+            <div class="col-lg-6 mb-4">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span><i class="fas fa-key me-2"></i>Registration Keys</span>
+                        <span class="badge bg-primary">{{ keys|length }}</span>
+                    </div>
+                    <div class="card-body p-0">
+                        {% if keys %}
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Key</th>
+                                        <th>Duration</th>
+                                        <th>Status</th>
+                                        <th>Created</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for key in keys %}
+                                    <tr>
+                                        <td>
+                                            <code>{{ key.key_value[:12] }}...</code>
+                                            {% if key.allowed_telegram_user_id %}
+                                            <br><small class="text-muted">For: {{ key.allowed_telegram_user_id }}</small>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ key.duration_months }} month{% if key.duration_months != 1 %}s{% endif %}</td>
+                                        <td>
+                                            {% if key.used %}
+                                            <span class="badge bg-success">Used</span>
+                                            <br><small>by {{ key.used_by_telegram }}</small>
+                                            {% else %}
+                                            <span class="badge bg-warning">Available</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ key.created_at }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="text-center py-4">
+                            <i class="fas fa-key fa-2x text-muted mb-2"></i>
+                            <p class="text-muted">No keys generated yet</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Get CSRF token function
+        function getCSRFToken() {
+            return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+        }
 
-// Function to select text
-function selectText(element) {
-  if (window.getSelection) {
-    const selection = window.getSelection();
-    const range = document.createRange();
-    range.selectNodeContents(element);
-    selection.removeAllRanges();
-    selection.addRange(range);
-  }
-}
+        // Session timer
+        function updateSessionTimer() {
+            fetch('/admin/session-info')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.authenticated) {
+                        const timeLeft = data.session_time_left_seconds;
+                        const minutes = Math.floor(timeLeft / 60);
+                        const seconds = timeLeft % 60;
+                        
+                        document.getElementById('timeLeft').textContent = 
+                            `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                        
+                        const timerElement = document.getElementById('sessionTimer');
+                        if (timeLeft < 60) {
+                            timerElement.classList.add('warning');
+                        } else {
+                            timerElement.classList.remove('warning');
+                        }
+                    }
+                })
+                .catch(error => console.error('Error fetching session info:', error));
+        }
 
-// Function to refresh the table
-function refreshTable() {
-  location.reload();
-}
+        // Update timer every 30 seconds
+        setInterval(updateSessionTimer, 30000);
+        updateSessionTimer(); // Initial call
 
-// Click on key to select it
-document.getElementById('generatedKey').addEventListener('click', function() {
-  selectText(this);
-});
-</script>
+        // Keep session alive on user activity
+        document.addEventListener('click', function() {
+            fetch('/admin/keep-alive', { 
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': getCSRFToken()
+                }
+            });
+        });
+
+        // Generate key form
+        document.getElementById('generateKeyForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const loadingSpinner = document.getElementById('loadingSpinner');
+            const keyResult = document.getElementById('keyResult');
+            
+            loadingSpinner.style.display = 'block';
+            keyResult.style.display = 'none';
+            
+            fetch('/admin/generate-key', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': getCSRFToken()
+                },
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                loadingSpinner.style.display = 'none';
+                
+                if (data.success) {
+                    document.getElementById('generatedKey').textContent = data.key;
+                    keyResult.style.display = 'block';
+                    this.reset();
+                    
+                    // Reload page after 2 seconds to show new key
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 10000);
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            })
+            .catch(error => {
+                loadingSpinner.style.display = 'none';
+                alert('Error generating key: ' + error);
+            });
+        });
+
+        // Copy key to clipboard
+        function copyKey() {
+            const key = document.getElementById('generatedKey').textContent;
+            navigator.clipboard.writeText(key).then(() => {
+                const btn = event.target;
+                const originalHtml = btn.innerHTML;
+                btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+                setTimeout(() => {
+                    btn.innerHTML = originalHtml;
+                }, 2000);
+            });
+        }
+    </script>
 </body>
 </html>
-
