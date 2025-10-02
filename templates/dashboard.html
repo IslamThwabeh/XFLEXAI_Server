@@ -172,6 +172,35 @@
         .loading-spinner {
             display: none;
         }
+
+        /* Pagination Styles */
+        .pagination-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.5rem;
+            border-top: 1px solid var(--border-color);
+            background: white;
+            border-radius: 0 0 var(--border-radius-lg) var(--border-radius-lg);
+        }
+
+        .page-size-selector {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .page-size-selector select {
+            width: auto;
+            display: inline-block;
+        }
+
+        /* Fix for key display - remove truncation */
+        .key-value {
+            font-family: monospace;
+            font-size: 0.9rem;
+            word-break: break-all;
+        }
     </style>
 </head>
 <body>
@@ -182,7 +211,7 @@
                 <i class="fas fa-robot"></i>
                 XFLEXAI Admin
             </a>
-            
+
             <div class="user-menu">
                 <div id="sessionTimer" class="session-timer">
                     <i class="fas fa-clock me-1"></i>
@@ -222,7 +251,7 @@
                 <div class="stat-value">{{ stats.total_users }}</div>
                 <div class="stat-label">Total Users</div>
             </div>
-            
+
             <div class="stat-card">
                 <div class="stat-icon" style="background: rgba(5, 150, 105, 0.1); color: var(--success-color);">
                     <i class="fas fa-user-check fa-lg"></i>
@@ -230,7 +259,7 @@
                 <div class="stat-value">{{ stats.active_users }}</div>
                 <div class="stat-label">Active Users</div>
             </div>
-            
+
             <div class="stat-card">
                 <div class="stat-icon" style="background: rgba(220, 38, 38, 0.1); color: var(--danger-color);">
                     <i class="fas fa-user-times fa-lg"></i>
@@ -238,7 +267,7 @@
                 <div class="stat-value">{{ stats.expired_users }}</div>
                 <div class="stat-label">Expired Users</div>
             </div>
-            
+
             <div class="stat-card">
                 <div class="stat-icon" style="background: rgba(217, 119, 6, 0.1); color: var(--warning-color);">
                     <i class="fas fa-key fa-lg"></i>
@@ -246,7 +275,7 @@
                 <div class="stat-value">{{ stats.total_keys }}</div>
                 <div class="stat-label">Total Keys</div>
             </div>
-            
+
             <div class="stat-card">
                 <div class="stat-icon" style="background: rgba(8, 145, 178, 0.1); color: var(--info-color);">
                     <i class="fas fa-key fa-lg"></i>
@@ -254,7 +283,7 @@
                 <div class="stat-value">{{ stats.unused_keys }}</div>
                 <div class="stat-label">Unused Keys</div>
             </div>
-            
+
             <div class="stat-card">
                 <div class="stat-icon" style="background: rgba(100, 116, 139, 0.1); color: var(--secondary-color);">
                     <i class="fas fa-key fa-lg"></i>
@@ -268,7 +297,7 @@
         <div class="generate-key-form mb-4">
             <h5 class="mb-3"><i class="fas fa-plus-circle me-2"></i>Generate New Key</h5>
             <form id="generateKeyForm">
-	        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                 <div class="row g-3">
                     <div class="col-md-4">
                         <label for="duration" class="form-label">Duration (months)</label>
@@ -281,7 +310,7 @@
                     </div>
                     <div class="col-md-5">
                         <label for="telegram_identifier" class="form-label">Telegram User (Optional)</label>
-                        <input type="text" class="form-control" id="telegram_identifier" name="telegram_identifier" 
+                        <input type="text" class="form-control" id="telegram_identifier" name="telegram_identifier"
                                placeholder="@username or user_id">
                         <div class="form-text">Leave empty for public key</div>
                     </div>
@@ -293,7 +322,7 @@
                     </div>
                 </div>
             </form>
-            
+
             <div id="keyResult" class="mt-3" style="display: none;">
                 <div class="alert alert-success">
                     <h6 class="alert-heading">Key Generated Successfully!</h6>
@@ -303,7 +332,7 @@
                     </button>
                 </div>
             </div>
-            
+
             <div class="loading-spinner text-center mt-3" id="loadingSpinner">
                 <div class="spinner-border text-primary" role="status">
                     <span class="visually-hidden">Generating key...</span>
@@ -336,7 +365,7 @@
                                         <td>
                                             <strong>{{ user.telegram_user_id }}</strong>
                                             {% if user.registration_key_value %}
-                                            <br><small class="text-muted">Key: {{ user.registration_key_value[:8] }}...</small>
+                                            <br><small class="text-muted">Key: {{ user.registration_key_value }}</small>
                                             {% endif %}
                                         </td>
                                         <td>
@@ -371,7 +400,7 @@
                     <div class="card-body p-0">
                         {% if keys %}
                         <div class="table-responsive">
-                            <table class="table table-hover mb-0">
+                            <table class="table table-hover mb-0" id="keysTable">
                                 <thead>
                                     <tr>
                                         <th>Key</th>
@@ -380,11 +409,11 @@
                                         <th>Created</th>
                                     </tr>
                                 </thead>
-                                <tbody>
+                                <tbody id="keysTableBody">
                                     {% for key in keys %}
                                     <tr>
                                         <td>
-                                            <code>{{ key.key_value[:12] }}...</code>
+                                            <code class="key-value">{{ key.key_value }}</code>
                                             {% if key.allowed_telegram_user_id %}
                                             <br><small class="text-muted">For: {{ key.allowed_telegram_user_id }}</small>
                                             {% endif %}
@@ -403,6 +432,31 @@
                                     {% endfor %}
                                 </tbody>
                             </table>
+                        </div>
+                        
+                        <!-- Pagination Controls -->
+                        <div class="pagination-container">
+                            <div class="page-size-selector">
+                                <label for="pageSize" class="form-label mb-0">Show:</label>
+                                <select class="form-select form-select-sm" id="pageSize" style="width: auto;">
+                                    <option value="5">5</option>
+                                    <option value="10" selected>10</option>
+                                    <option value="25">25</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                </select>
+                                <span class="text-muted">entries</span>
+                            </div>
+                            <div>
+                                <nav>
+                                    <ul class="pagination pagination-sm mb-0" id="paginationControls">
+                                        <!-- Pagination buttons will be inserted here by JavaScript -->
+                                    </ul>
+                                </nav>
+                            </div>
+                            <div class="text-muted">
+                                Showing <span id="showingStart">1</span> to <span id="showingEnd">10</span> of <span id="totalEntries">{{ keys|length }}</span> entries
+                            </div>
                         </div>
                         {% else %}
                         <div class="text-center py-4">
@@ -432,10 +486,10 @@
                         const timeLeft = data.session_time_left_seconds;
                         const minutes = Math.floor(timeLeft / 60);
                         const seconds = timeLeft % 60;
-                        
-                        document.getElementById('timeLeft').textContent = 
+
+                        document.getElementById('timeLeft').textContent =
                             `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-                        
+
                         const timerElement = document.getElementById('sessionTimer');
                         if (timeLeft < 60) {
                             timerElement.classList.add('warning');
@@ -453,7 +507,7 @@
 
         // Keep session alive on user activity
         document.addEventListener('click', function() {
-            fetch('/admin/keep-alive', { 
+            fetch('/admin/keep-alive', {
                 method: 'POST',
                 headers: {
                     'X-CSRFToken': getCSRFToken()
@@ -464,14 +518,14 @@
         // Generate key form
         document.getElementById('generateKeyForm').addEventListener('submit', function(e) {
             e.preventDefault();
-            
+
             const formData = new FormData(this);
             const loadingSpinner = document.getElementById('loadingSpinner');
             const keyResult = document.getElementById('keyResult');
-            
+
             loadingSpinner.style.display = 'block';
             keyResult.style.display = 'none';
-            
+
             fetch('/admin/generate-key', {
                 method: 'POST',
                 headers: {
@@ -482,13 +536,13 @@
             .then(response => response.json())
             .then(data => {
                 loadingSpinner.style.display = 'none';
-                
+
                 if (data.success) {
                     document.getElementById('generatedKey').textContent = data.key;
                     keyResult.style.display = 'block';
                     this.reset();
-                    
-                    // Reload page after 2 seconds to show new key
+
+                    // Reload page after 10 seconds to show new key
                     setTimeout(() => {
                         window.location.reload();
                     }, 10000);
@@ -514,6 +568,102 @@
                 }, 2000);
             });
         }
+
+        // Pagination functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            const keysTable = document.getElementById('keysTable');
+            if (!keysTable) return;
+
+            const tableBody = document.getElementById('keysTableBody');
+            const rows = Array.from(tableBody.getElementsByTagName('tr'));
+            const pageSizeSelect = document.getElementById('pageSize');
+            const paginationControls = document.getElementById('paginationControls');
+            const showingStart = document.getElementById('showingStart');
+            const showingEnd = document.getElementById('showingEnd');
+            const totalEntries = document.getElementById('totalEntries');
+
+            let currentPage = 1;
+            let pageSize = parseInt(pageSizeSelect.value);
+
+            function updatePagination() {
+                // Calculate total pages
+                const totalPages = Math.ceil(rows.length / pageSize);
+                
+                // Clear existing pagination controls
+                paginationControls.innerHTML = '';
+                
+                // Previous button
+                const prevLi = document.createElement('li');
+                prevLi.className = `page-item ${currentPage === 1 ? 'disabled' : ''}`;
+                prevLi.innerHTML = `<a class="page-link" href="#" aria-label="Previous"><span aria-hidden="true">&laquo;</span></a>`;
+                prevLi.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    if (currentPage > 1) {
+                        currentPage--;
+                        showPage(currentPage);
+                    }
+                });
+                paginationControls.appendChild(prevLi);
+                
+                // Page numbers
+                for (let i = 1; i <= totalPages; i++) {
+                    const pageLi = document.createElement('li');
+                    pageLi.className = `page-item ${i === currentPage ? 'active' : ''}`;
+                    pageLi.innerHTML = `<a class="page-link" href="#">${i}</a>`;
+                    pageLi.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        showPage(i);
+                    });
+                    paginationControls.appendChild(pageLi);
+                }
+                
+                // Next button
+                const nextLi = document.createElement('li');
+                nextLi.className = `page-item ${currentPage === totalPages ? 'disabled' : ''}`;
+                nextLi.innerHTML = `<a class="page-link" href="#" aria-label="Next"><span aria-hidden="true">&raquo;</span></a>`;
+                nextLi.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    if (currentPage < totalPages) {
+                        currentPage++;
+                        showPage(currentPage);
+                    }
+                });
+                paginationControls.appendChild(nextLi);
+                
+                // Update showing information
+                const start = (currentPage - 1) * pageSize + 1;
+                const end = Math.min(currentPage * pageSize, rows.length);
+                showingStart.textContent = start;
+                showingEnd.textContent = end;
+                totalEntries.textContent = rows.length;
+            }
+            
+            function showPage(page) {
+                currentPage = page;
+                const start = (page - 1) * pageSize;
+                const end = start + pageSize;
+                
+                // Hide all rows
+                rows.forEach(row => row.style.display = 'none');
+                
+                // Show rows for current page
+                for (let i = start; i < end && i < rows.length; i++) {
+                    rows[i].style.display = '';
+                }
+                
+                updatePagination();
+            }
+            
+            // Event listener for page size change
+            pageSizeSelect.addEventListener('change', function() {
+                pageSize = parseInt(this.value);
+                currentPage = 1;
+                showPage(currentPage);
+            });
+            
+            // Initialize pagination
+            showPage(currentPage);
+        });
     </script>
 </body>
 </html>
