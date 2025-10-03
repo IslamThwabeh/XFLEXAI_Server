@@ -1,4 +1,4 @@
-# app.py - main entry point with enhanced security and session management
+# app.py - remove all debug prints, keep only essential ones
 import os
 from datetime import datetime, timedelta
 from flask import Flask, session, request, g, redirect, url_for
@@ -18,7 +18,6 @@ app.config.from_object(Config)
 try:
     from routes.create_admin import main as create_admin_main
     create_admin_main()
-    print("Admin creation script executed on startup")
 except Exception as e:
     print(f"Admin creation warning: {e}")
 
@@ -80,7 +79,7 @@ def security_headers(response):
 app.register_blueprint(admin_bp)
 app.register_blueprint(api_bp)
 
-# EXEMPT API BLUEPRINT FROM CSRF - Add this line
+# EXEMPT API BLUEPRINT FROM CSRF
 csrf.exempt(api_bp)
 
 @app.errorhandler(429)

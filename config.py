@@ -2,9 +2,6 @@
 import os
 from datetime import timedelta
 
-print("🚨 CONFIG: Loading configuration...")
-print(f"🚨 CONFIG: OPENAI_API_KEY from env = {os.environ.get('OPENAI_API_KEY', 'NOT_FOUND')[:20]}..." if os.environ.get('OPENAI_API_KEY') else "🚨 CONFIG: OPENAI_API_KEY from env = NOT_FOUND")
-
 class Config:
     # Basic Configuration
     SECRET_KEY = os.environ.get('SESSION_SECRET', 'fallback-secret-key-for-dev')
@@ -25,5 +22,3 @@ class Config:
     # Rate Limiting Configuration
     RATELIMIT_STORAGE_URL = os.environ.get('REDIS_URL', 'memory://')
     RATELIMIT_DEFAULT = "100 per hour"
-
-print("🚨 CONFIG: Configuration loaded successfully")
