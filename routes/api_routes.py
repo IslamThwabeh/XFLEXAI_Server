@@ -15,8 +15,11 @@ analysis_sessions = {}
 
 @api_bp.route('/')
 def home():
-    status = "✅" if OPENAI_AVAILABLE else "❌"
-    return f"XFLEXAI Server is running {status} - OpenAI: {'Available' if OPENAI_AVAILABLE else openai_error_message}"
+    from flask import current_app
+    openai_available = current_app.config.get('OPENAI_AVAILABLE', False)
+    openai_error = current_app.config.get('OPENAI_ERROR_MESSAGE', 'Unknown error')
+    status = "✅" if openai_available else "❌"
+    return f"XFLEXAI Server is running {status} - OpenAI: {'Available' if openai_available else openai_error}"
 
 @api_bp.route('/redeem-key', methods=['POST'])
 def redeem_key_route():
@@ -50,7 +53,7 @@ def analyze():
         data = request.get_json()
         if not data:
             return jsonify({
-                "success": False, 
+                "success": False,
                 "message": "لم يتم إرسال بيانات"
             }), 400
 
@@ -88,7 +91,7 @@ def analyze():
         if expiry and datetime.utcnow() > expiry:
             return jsonify({
                 "success": False,
-                "code": "expired", 
+                "code": "expired",
                 "message": "Your subscription has expired. Please renew or contact admin."
             }), 403
 
@@ -96,7 +99,7 @@ def analyze():
         if telegram_user_id not in analysis_sessions:
             analysis_sessions[telegram_user_id] = {
                 'first_analysis': None,
-                'second_analysis': None, 
+                'second_analysis': None,
                 'first_timeframe': None,
                 'second_timeframe': None,
                 'user_analysis': None,
@@ -144,7 +147,7 @@ def analyze():
         elif action_type == 'second_analysis':
             if not image_str:
                 return jsonify({
-                    "success": False, 
+                    "success": False,
                     "message": "صورة غير صالحة"
                 }), 400
 
@@ -172,7 +175,7 @@ def analyze():
                 "success": True,
                 "message": "✅ تم التحليل الشامل بنجاح",
                 "analysis": final_analysis,
-                "next_action": "user_analysis", 
+                "next_action": "user_analysis",
                 "next_prompt": "هل تريد مشاركة تحليلك الشخصي للحصول على تقييم؟"
             }), 200
 
@@ -203,7 +206,7 @@ def analyze():
             analysis_sessions[telegram_user_id] = {
                 'first_analysis': None,
                 'second_analysis': None,
-                'first_timeframe': None, 
+                'first_timeframe': None,
                 'second_timeframe': None,
                 'user_analysis': None,
                 'status': 'ready'
@@ -231,8 +234,10 @@ def analyze():
 # Keep status endpoint for monitoring
 @api_bp.route('/status')
 def status_route():
+    from flask import current_app
+    openai_available = current_app.config.get('OPENAI_AVAILABLE', False)
     return jsonify({
         "server": "running",
-        "openai_available": OPENAI_AVAILABLE,
+        "openai_available": openai_available,
         "active_sessions": len(analysis_sessions)
     })

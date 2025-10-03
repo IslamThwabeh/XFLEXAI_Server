@@ -7,7 +7,7 @@ from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFProtect
 from config import Config
 from database.operations import init_database
-from services.openai_service import init_openai
+from services.openai_service import init_openai, OPENAI_AVAILABLE, openai_error_message
 from routes.admin_routes import admin_bp
 from routes.api_routes import api_bp
 
@@ -36,6 +36,21 @@ limiter.init_app(app)
 
 # Session configuration
 app.permanent_session_lifetime = Config.PERMANENT_SESSION_LIFETIME
+
+# Store OpenAI status in app config so it persists
+app.config['OPENAI_AVAILABLE'] = False
+app.config['OPENAI_ERROR_MESSAGE'] = ""
+
+# Initialize DB and OpenAI on startup - but only once
+print("🚨 APP: Starting database initialization...")
+init_database()
+print("🚨 APP: Database initialized successfully")
+
+print("🚨 APP: Starting OpenAI initialization...")
+openai_success = init_openai()
+app.config['OPENAI_AVAILABLE'] = openai_success
+app.config['OPENAI_ERROR_MESSAGE'] = openai_error_message
+print(f"🚨 APP: OpenAI initialization result: {'SUCCESS' if openai_success else 'FAILED'}")
 
 # Session middleware for automatic timeout handling
 @app.before_request
@@ -70,15 +85,6 @@ def security_headers(response):
     response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     return response
 
-# Initialize DB and OpenAI on startup
-print("🚨 APP: Starting database initialization...")
-init_database()
-print("🚨 APP: Database initialized successfully")
-
-print("🚨 APP: Starting OpenAI initialization...")
-openai_success = init_openai()
-print(f"🚨 APP: OpenAI initialization result: {'SUCCESS' if openai_success else 'FAILED'}")
-
 # Register blueprints
 print("🚨 APP: Registering blueprints...")
 app.register_blueprint(admin_bp)
@@ -92,4 +98,5 @@ def ratelimit_handler(e):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     print(f"🚨 APP: Starting Flask server on port {port}")
-    app.run(host="0.0.0.0", port=port, debug=os.environ.get('FLASK_ENV') == 'development')
+    # Disable reloader to prevent global variable reset
+    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
