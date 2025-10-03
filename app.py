@@ -14,15 +14,19 @@ from routes.api_routes import api_bp
 app = Flask(__name__)
 app.config.from_object(Config)
 
+print("🚨 APP: Starting Flask application...")
+
 # Auto-create admin if it doesn't exist (add this to app.py)
 try:
+    print("🚨 APP: Running admin creation script...")
     from routes.create_admin import main as create_admin_main
     create_admin_main()
-    print("Admin creation script executed on startup")
+    print("🚨 APP: Admin creation script executed on startup")
 except Exception as e:
-    print(f"Admin creation warning: {e}")
+    print(f"🚨 APP: Admin creation warning: {e}")
 
 # Initialize security extensions
+print("🚨 APP: Initializing security extensions...")
 csrf = CSRFProtect(app)
 limiter = Limiter(
     key_func=get_remote_address,
@@ -67,12 +71,19 @@ def security_headers(response):
     return response
 
 # Initialize DB and OpenAI on startup
+print("🚨 APP: Starting database initialization...")
 init_database()
-init_openai()
+print("🚨 APP: Database initialized successfully")
+
+print("🚨 APP: Starting OpenAI initialization...")
+openai_success = init_openai()
+print(f"🚨 APP: OpenAI initialization result: {'SUCCESS' if openai_success else 'FAILED'}")
 
 # Register blueprints
+print("🚨 APP: Registering blueprints...")
 app.register_blueprint(admin_bp)
 app.register_blueprint(api_bp)
+print("🚨 APP: Blueprints registered successfully")
 
 @app.errorhandler(429)
 def ratelimit_handler(e):
@@ -80,4 +91,5 @@ def ratelimit_handler(e):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
+    print(f"🚨 APP: Starting Flask server on port {port}")
     app.run(host="0.0.0.0", port=port, debug=os.environ.get('FLASK_ENV') == 'development')
