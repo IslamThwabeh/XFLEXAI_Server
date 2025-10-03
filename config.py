@@ -8,6 +8,11 @@ class Config:
     DATABASE_URL = os.environ.get('DATABASE_URL')
     OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
     MAX_CONTENT_LENGTH = 5 * 1024 * 1024  # 5MB
+
+    # Temp to print the variables:
+    # ADD DEBUG PRINTS
+    print(f"🚨 CONFIG DEBUG: OPENAI_API_KEY from env = {os.environ.get('OPENAI_API_KEY', 'NOT_FOUND')}")
+    print(f"🚨 CONFIG DEBUG: All env vars: {list(os.environ.keys())}")
     
     # Session Configuration
     PERMANENT_SESSION_LIFETIME = timedelta(minutes=15)  # 15 minute timeout
