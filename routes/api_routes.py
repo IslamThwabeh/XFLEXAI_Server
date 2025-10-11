@@ -180,8 +180,8 @@ def analyze():
                 "success": True,
                 "message": "✅ تم التحليل الشامل بنجاح",
                 "next_action": "user_analysis", 
-                "next_prompt": "هل تريد مشاركة تحليلك الشخصي للحصول على تقييم؟"
-                "analysis": final_analysis,
+                "next_prompt": "هل تريد مشاركة تحليلك الشخصي للحصول على تقييم؟",
+                "analysis": final_analysis
             }), 200
 
         elif action_type == 'user_analysis':
