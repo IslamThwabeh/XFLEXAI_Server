@@ -1,4 +1,3 @@
-# routes/api_routes.py
 import time
 from datetime import datetime
 from flask import Blueprint, request, jsonify, current_app
@@ -49,7 +48,7 @@ def analyze():
         print(f"🚨 ANALYZE ENDPOINT: Received request at {datetime.now()}")
         print(f"🚨 ANALYZE ENDPOINT: Headers: {dict(request.headers)}")
         print(f"🚨 ANALYZE ENDPOINT: Content-Type: {request.content_type}")
-        
+
         if not request.is_json:
             error_response = {
                 "success": False,
@@ -63,7 +62,7 @@ def analyze():
 
         if not data:
             error_response = {
-                "success": False, 
+                "success": False,
                 "message": "لم يتم إرسال بيانات"
             }
             print(f"🚨 ANALYZE ENDPOINT: ❌ Returning error - No data: {error_response}")
@@ -72,7 +71,7 @@ def analyze():
         telegram_user_id = data.get('telegram_user_id')
         action_type = data.get('action_type', 'first_analysis')
         image_url = data.get('image_url')
-        
+
         print(f"🚨 ANALYZE ENDPOINT: 👤 Telegram ID: {telegram_user_id}")
         print(f"🚨 ANALYZE ENDPOINT: 🎯 Action Type: {action_type}")
         print(f"🚨 ANALYZE ENDPOINT: 🖼️ Image URL: {image_url}")
@@ -116,7 +115,7 @@ def analyze():
         if expiry and datetime.utcnow() > expiry:
             error_response = {
                 "success": False,
-                "code": "expired", 
+                "code": "expired",
                 "message": "Your subscription has expired. Please renew or contact admin."
             }
             print(f"🚨 ANALYZE ENDPOINT: ❌ Returning error - Subscription expired: {error_response}")
@@ -169,7 +168,17 @@ def analyze():
                 return jsonify(error_response), 400
 
             print(f"🚨 ANALYZE ENDPOINT: 🧠 Starting first analysis with timeframe: {timeframe}")
-            analysis = analyze_with_openai(image_str, image_format, timeframe)
+            analysis = analyze_with_openai(image_str, image_format, timeframe, action_type='first_analysis')
+            
+            # Check if analysis returned a validation error (starts with ❌)
+            if analysis.startswith('❌'):
+                error_response = {
+                    "success": False,
+                    "message": analysis
+                }
+                print(f"🚨 ANALYZE ENDPOINT: ❌ Timeframe validation failed: {analysis}")
+                return jsonify(error_response), 400
+            
             session_data['first_analysis'] = analysis
             session_data['first_timeframe'] = timeframe
             session_data['status'] = 'first_done'
@@ -186,7 +195,7 @@ def analyze():
 
         elif action_type == 'second_analysis':
             print(f"🚨 ANALYZE ENDPOINT: 🔄 Starting second analysis")
-            
+
             if not image_str:
                 error_response = {
                     "success": False,
@@ -206,7 +215,17 @@ def analyze():
             # Use H4 for second analysis
             second_timeframe = 'H4'
             print(f"🚨 ANALYZE ENDPOINT: 🧠 Starting second analysis with timeframe: {second_timeframe}")
-            analysis = analyze_with_openai(image_str, image_format, second_timeframe, session_data['first_analysis'])
+            analysis = analyze_with_openai(image_str, image_format, second_timeframe, session_data['first_analysis'], action_type='second_analysis')
+            
+            # Check if analysis returned a validation error (starts with ❌)
+            if analysis.startswith('❌'):
+                error_response = {
+                    "success": False,
+                    "message": analysis
+                }
+                print(f"🚨 ANALYZE ENDPOINT: ❌ Timeframe validation failed: {analysis}")
+                return jsonify(error_response), 400
+            
             session_data['second_analysis'] = analysis
             session_data['second_timeframe'] = second_timeframe
             session_data['status'] = 'both_done'
@@ -216,14 +235,14 @@ def analyze():
             final_analysis = analyze_with_openai(
                 None, None, "combined",
                 f"{session_data['first_timeframe']}: {session_data['first_analysis']}",
-                None, "final_analysis"
+                session_data['second_analysis'], "final_analysis"
             )
 
             response_data = {
                 "success": True,
                 "message": "✅ تم التحليل الشامل بنجاح",
                 "analysis": final_analysis,
-                "next_action": "user_analysis", 
+                "next_action": "user_analysis",
                 "next_prompt": "هل تريد مشاركة تحليلك الشخصي للحصول على تقييم؟"
             }
             print(f"🚨 ANALYZE ENDPOINT: ✅ Second analysis completed - Response: {response_data}")
@@ -231,7 +250,7 @@ def analyze():
 
         elif action_type == 'user_analysis':
             print(f"🚨 ANALYZE ENDPOINT: 👤 Starting user analysis feedback")
-            
+
             if not user_analysis_text:
                 error_response = {
                     "success": False,

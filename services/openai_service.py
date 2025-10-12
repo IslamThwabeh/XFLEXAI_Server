@@ -17,13 +17,13 @@ def init_openai():
     Sets OPENAI_AVAILABLE, client, openai_error_message, openai_last_check.
     """
     global OPENAI_AVAILABLE, client, openai_error_message, openai_last_check
-    
+
     print("🚨 OPENAI INIT: Starting OpenAI initialization...")
-    
+
     try:
         from openai import OpenAI
         print("🚨 OPENAI INIT: OpenAI package imported successfully")
-        
+
         # Get API key from Config
         api_key = Config.OPENAI_API_KEY
         print(f"🚨 OPENAI INIT: Config.OPENAI_API_KEY = {api_key[:20]}..." if api_key else "🚨 OPENAI INIT: Config.OPENAI_API_KEY = None")
@@ -46,7 +46,7 @@ def init_openai():
             model_ids = [m.id for m in models.data]
             print(f"🚨 OPENAI INIT: Found {len(model_ids)} models")
             print(f"🚨 OPENAI INIT: First few models: {model_ids[:5]}")
-            
+
             if "gpt-4o" not in model_ids:
                 openai_error_message = "GPT-4o model not available in your account"
                 print(f"🚨 OPENAI INIT: ❌ GPT-4o not found in available models")
@@ -59,7 +59,7 @@ def init_openai():
             openai_last_check = time.time()
             print("🚨 OPENAI INIT: ✅ OpenAI initialized successfully!")
             return True
-            
+
         except Exception as e:
             error_msg = str(e)
             print(f"🚨 OPENAI INIT: ❌ Model list error: {error_msg}")
@@ -85,6 +85,71 @@ def init_openai():
         OPENAI_AVAILABLE = False
         return False
 
+def validate_timeframe_in_image(image_str, image_format, expected_timeframe):
+    """
+    Validate that the image contains the expected timeframe label
+    Returns: (is_valid, error_message)
+    """
+    try:
+        print(f"🕵️ Validating timeframe: expecting '{expected_timeframe}' in image")
+        
+        # Create system prompt for timeframe validation
+        system_prompt = f"""
+        You are a precise image validator. Your ONLY task is to check if the chart image contains the timeframe label '{expected_timeframe}'.
+        
+        IMPORTANT:
+        - Look for text labels like 'M15', 'H4', '1H', 'D1' etc. in the chart
+        - Focus on the top corners or chart header area where timeframe labels are typically displayed
+        - The label might be in different formats: '{expected_timeframe}', 'TF: {expected_timeframe}', 'Timeframe: {expected_timeframe}'
+        - Return ONLY 'VALID' if you clearly see '{expected_timeframe}' in the image
+        - Return ONLY 'INVALID' if you don't see '{expected_timeframe}' or see a different timeframe
+        
+        DO NOT analyze the chart content, trends, or patterns.
+        DO NOT provide any explanation or additional text.
+        ONLY return 'VALID' or 'INVALID'.
+        """
+        
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text", 
+                            "text": "Check if this chart image contains the timeframe label. Return ONLY 'VALID' or 'INVALID'."
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/{image_format};base64,{image_str}",
+                                "detail": "low"
+                            }
+                        }
+                    ]
+                }
+            ],
+            max_tokens=10
+        )
+        
+        validation_result = response.choices[0].message.content.strip().upper()
+        print(f"🕵️ Timeframe validation result: {validation_result}")
+        
+        if validation_result == "VALID":
+            return True, None
+        else:
+            error_msg = f"❌ الخطاء: الصورة لا تحتوي على الإطار الزمني {expected_timeframe}. يرجى تحميل صورة تحتوي على {expected_timeframe}."
+            return False, error_msg
+            
+    except Exception as e:
+        print(f"ERROR: Timeframe validation failed: {str(e)}")
+        # If validation fails, proceed with analysis but log the error
+        return True, None  # Fallback to allow analysis if validation fails
+
 def analyze_with_openai(image_str, image_format, timeframe=None, previous_analysis=None, user_analysis=None, action_type="chart_analysis"):
     """
     Analyze an image or text using OpenAI with enhanced, detailed analysis.
@@ -93,6 +158,12 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 
     if not OPENAI_AVAILABLE:
         raise RuntimeError(f"OpenAI not available: {openai_error_message}")
+
+    # Validate timeframe for first and second analysis (when image is provided)
+    if image_str and action_type in ['first_analysis', 'second_analysis']:
+        is_valid, error_msg = validate_timeframe_in_image(image_str, image_format, timeframe)
+        if not is_valid:
+            return error_msg
 
     if action_type == "user_analysis_feedback":
         char_limit = 800
