@@ -142,7 +142,8 @@ def validate_timeframe_in_image(image_str, image_format, expected_timeframe):
         if validation_result == "VALID":
             return True, None
         else:
-            error_msg = f"❌ الخطاء: الصورة لا تحتوي على الإطار الزمني {expected_timeframe}. يرجى تحميل صورة تحتوي على {expected_timeframe}."
+            # Fixed typo: "الخطاء" → "الخطأ"
+            error_msg = f"❌ الخطأ: الصورة لا تحتوي على الإطار الزمني {expected_timeframe}. يرجى تحميل صورة تحتوي على {expected_timeframe}."
             return False, error_msg
             
     except Exception as e:
@@ -332,7 +333,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
         analysis = response.choices[0].message.content.strip()
         print(f"🚨 OPENAI ANALYSIS: ✅ Analysis completed, length: {len(analysis)} chars")
 
-        # Backup enforcement of character limit
+[O        # Backup enforcement of character limit
         if len(analysis) > char_limit + 200:
             print(f"🚨 OPENAI ANALYSIS: Analysis too long ({len(analysis)}), retrying with shorter version")
             retry_prompt = f"""
