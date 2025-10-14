@@ -1,3 +1,4 @@
+# routes/api_routes.py
 import time
 from datetime import datetime
 from flask import Blueprint, request, jsonify, current_app
@@ -165,7 +166,8 @@ def analyze():
                     "message": "صورة غير صالحة"
                 }
                 print(f"🚨 ANALYZE ENDPOINT: ❌ Returning error - Invalid image: {error_response}")
-                return jsonify(error_response), 400
+                # Return 200 instead of 400 for SendPulse compatibility
+                return jsonify(error_response), 200
 
             print(f"🚨 ANALYZE ENDPOINT: 🧠 Starting first analysis with timeframe: {timeframe}")
             analysis = analyze_with_openai(image_str, image_format, timeframe, action_type='first_analysis')
@@ -174,10 +176,13 @@ def analyze():
             if analysis.startswith('❌'):
                 error_response = {
                     "success": False,
-                    "message": analysis
+                    "message": analysis,
+                    "validation_error": True,
+                    "expected_timeframe": "M15"
                 }
-                print(f"🚨 ANALYZE ENDPOINT: ❌ Timeframe validation failed: {analysis}")
-                return jsonify(error_response), 400
+                print(f"🚨 ANALYZE ENDPOINT: ⚠️ Timeframe validation failed (returning 200): {analysis}")
+                # Return 200 instead of 400 for SendPulse compatibility
+                return jsonify(error_response), 200
             
             session_data['first_analysis'] = analysis
             session_data['first_timeframe'] = timeframe
@@ -202,7 +207,8 @@ def analyze():
                     "message": "صورة غير صالحة"
                 }
                 print(f"🚨 ANALYZE ENDPOINT: ❌ Returning error - Invalid image: {error_response}")
-                return jsonify(error_response), 400
+                # Return 200 instead of 400 for SendPulse compatibility
+                return jsonify(error_response), 200
 
             if session_data['status'] != 'first_done':
                 error_response = {
@@ -210,7 +216,8 @@ def analyze():
                     "message": "يجب تحليل الإطار الأول قبل الثاني"
                 }
                 print(f"🚨 ANALYZE ENDPOINT: ❌ Returning error - First analysis not done: {error_response}")
-                return jsonify(error_response), 400
+                # Return 200 instead of 400 for SendPulse compatibility
+                return jsonify(error_response), 200
 
             # Use H4 for second analysis
             second_timeframe = 'H4'
@@ -221,10 +228,13 @@ def analyze():
             if analysis.startswith('❌'):
                 error_response = {
                     "success": False,
-                    "message": analysis
+                    "message": analysis,
+                    "validation_error": True,
+                    "expected_timeframe": "H4"
                 }
-                print(f"🚨 ANALYZE ENDPOINT: ❌ Timeframe validation failed: {analysis}")
-                return jsonify(error_response), 400
+                print(f"🚨 ANALYZE ENDPOINT: ⚠️ Timeframe validation failed (returning 200): {analysis}")
+                # Return 200 instead of 400 for SendPulse compatibility
+                return jsonify(error_response), 200
             
             session_data['second_analysis'] = analysis
             session_data['second_timeframe'] = second_timeframe
