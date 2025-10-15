@@ -333,7 +333,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
         analysis = response.choices[0].message.content.strip()
         print(f"🚨 OPENAI ANALYSIS: ✅ Analysis completed, length: {len(analysis)} chars")
 
-[O        # Backup enforcement of character limit
+        # Backup enforcement of character limit
         if len(analysis) > char_limit + 200:
             print(f"🚨 OPENAI ANALYSIS: Analysis too long ({len(analysis)}), retrying with shorter version")
             retry_prompt = f"""
