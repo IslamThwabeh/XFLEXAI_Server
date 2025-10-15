@@ -92,23 +92,23 @@ def validate_timeframe_in_image(image_str, image_format, expected_timeframe):
     """
     try:
         print(f"🕵️ Validating timeframe: expecting '{expected_timeframe}' in image")
-        
+
         # Create system prompt for timeframe validation
         system_prompt = f"""
         You are a precise image validator. Your ONLY task is to check if the chart image contains the timeframe label '{expected_timeframe}'.
-        
+
         IMPORTANT:
         - Look for text labels like 'M15', 'H4', '1H', 'D1' etc. in the chart
         - Focus on the top corners or chart header area where timeframe labels are typically displayed
         - The label might be in different formats: '{expected_timeframe}', 'TF: {expected_timeframe}', 'Timeframe: {expected_timeframe}'
         - Return ONLY 'VALID' if you clearly see '{expected_timeframe}' in the image
         - Return ONLY 'INVALID' if you don't see '{expected_timeframe}' or see a different timeframe
-        
+
         DO NOT analyze the chart content, trends, or patterns.
         DO NOT provide any explanation or additional text.
         ONLY return 'VALID' or 'INVALID'.
         """
-        
+
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
@@ -120,7 +120,7 @@ def validate_timeframe_in_image(image_str, image_format, expected_timeframe):
                     "role": "user",
                     "content": [
                         {
-                            "type": "text", 
+                            "type": "text",
                             "text": "Check if this chart image contains the timeframe label. Return ONLY 'VALID' or 'INVALID'."
                         },
                         {
@@ -135,17 +135,17 @@ def validate_timeframe_in_image(image_str, image_format, expected_timeframe):
             ],
             max_tokens=10
         )
-        
+
         validation_result = response.choices[0].message.content.strip().upper()
         print(f"🕵️ Timeframe validation result: {validation_result}")
-        
+
         if validation_result == "VALID":
             return True, None
         else:
             # Fixed typo: "الخطاء" → "الخطأ"
             error_msg = f"❌ الخطأ: الصورة لا تحتوي على الإطار الزمني {expected_timeframe}. يرجى تحميل صورة تحتوي على {expected_timeframe}."
             return False, error_msg
-            
+
     except Exception as e:
         print(f"ERROR: Timeframe validation failed: {str(e)}")
         # If validation fails, proceed with analysis but log the error
@@ -169,18 +169,34 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
     if action_type == "user_analysis_feedback":
         char_limit = 800
         analysis_prompt = f"""
-أنت خبير تحليل فني. قم بتقييم تحليل المستخدم التالي وتقديم ملاحظات بناءة:
+أنت خبير تحليل فني صارم وصادق. قم بتقييم تحليل المستخدم التالي بصدق وموضوعية:
 
 تحليل المستخدم:
 {user_analysis}
 
-**التزم الصارم بالشروط التالية:**
-1. لا تتجاوز {char_limit} حرف تحت أي ظرف
-2. قدم نقاط قوة التحليل
-3. قدم نقاط تحسين مع شرح موجز
-4. قدم نصيحة عملية واحدة
+**تعليمات صارمة:**
+1. قيم التحليل بناءً على الدقة الفنية والمنطق
+2. كن صادقًا وواضحًا - إذا كان التحليل ضعيفًا أو خاطئًا، قل ذلك بوضوح
+3. لا تبالغ في الإيجابيات إذا كانت غير موجودة
+4. ركز على الأخطاء الجسيمة في التفكير التحليلي
+5. قدم نقدًا بناءً مع حلول عملية
 
-**تأكد من عد الأحرف والالتزام بالحد {char_limit} حرف.**
+**هيكل التقييم:**
+### 📊 تقييم موضوعي:
+**الدقة الفنية:** (اذكر مدى توافق التحليل مع المبادئ الفنية)
+**المنطق التحليلي:** (حلل قوة الاستدلال والربط بين المفاهيم)
+**الأخطاء الرئيسية:** (حدد الأخطاء بوضوح دون مجاملة)
+
+### 🎯 نقاط تحتاج تحسين:
+1. (اكتب النقاط الأساسية التي تحتاج تصحيح)
+2. (كن محددًا وواضحًا)
+
+### 💡 توصيات عملية:
+(قدم 2-3 توصيات قابلة للتطبيق لتحسين التحليل)
+
+**كن محترفًا وصادقًا - الهدف هو المساعدة في التحسن، ليس المجاملة.**
+**إذا كان التحليل ضعيفًا جدًا، قل ذلك بوضوح مع شرح أسباب الضعف.**
+**التزم بعدم تجاوز {char_limit} حرف.**
 """
         max_tokens = char_limit // 2 + 50
 
