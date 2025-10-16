@@ -171,7 +171,7 @@ def analyze():
 
             print(f"🚨 ANALYZE ENDPOINT: 🧠 Starting first analysis with timeframe: {timeframe}")
             analysis = analyze_with_openai(image_str, image_format, timeframe, action_type='first_analysis')
-            
+
             # Check if analysis returned a validation error (starts with ❌)
             if analysis.startswith('❌'):
                 error_response = {
@@ -183,7 +183,7 @@ def analyze():
                 print(f"🚨 ANALYZE ENDPOINT: ⚠️ Timeframe validation failed (returning 200): {analysis}")
                 # Return 200 instead of 400 for SendPulse compatibility
                 return jsonify(error_response), 200
-            
+
             session_data['first_analysis'] = analysis
             session_data['first_timeframe'] = timeframe
             session_data['status'] = 'first_done'
@@ -223,7 +223,7 @@ def analyze():
             second_timeframe = 'H4'
             print(f"🚨 ANALYZE ENDPOINT: 🧠 Starting second analysis with timeframe: {second_timeframe}")
             analysis = analyze_with_openai(image_str, image_format, second_timeframe, session_data['first_analysis'], action_type='second_analysis')
-            
+
             # Check if analysis returned a validation error (starts with ❌)
             if analysis.startswith('❌'):
                 error_response = {
@@ -235,7 +235,7 @@ def analyze():
                 print(f"🚨 ANALYZE ENDPOINT: ⚠️ Timeframe validation failed (returning 200): {analysis}")
                 # Return 200 instead of 400 for SendPulse compatibility
                 return jsonify(error_response), 200
-            
+
             session_data['second_analysis'] = analysis
             session_data['second_timeframe'] = second_timeframe
             session_data['status'] = 'both_done'
@@ -353,3 +353,72 @@ def clear_sessions():
         "message": f"تم مسح {count} جلسة",
         "status": "sessions_cleared"
     })
+
+# Below API to handle single image analysis:
+
+@api_bp.route('/analyze-single', methods=['POST'])
+def analyze_single_image():
+    """
+    Analyze a single image - automatically detect timeframe and provide detailed analysis
+    Returns 200 always with success/failure in response body
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "success": False,
+                "error": "No JSON data provided"
+            }), 200
+        
+        image_url = data.get('image_url')
+        
+        if not image_url:
+            return jsonify({
+                "success": False, 
+                "error": "Missing image_url"
+            }), 200
+        
+        # Check OpenAI availability
+        if not current_app.config['OPENAI_AVAILABLE']:
+            return jsonify({
+                "success": False,
+                "error": "OpenAI service unavailable",
+                "message": current_app.config['OPENAI_ERROR_MESSAGE']
+            }), 200
+        
+        # Load and encode image
+        image_str, image_format = load_image_from_url(image_url)
+        if not image_str:
+            return jsonify({
+                "success": False,
+                "error": "Could not load image from URL"
+            }), 200
+        
+        # Detect timeframe from image
+        timeframe, detection_error = detect_timeframe_from_image(image_str, image_format)
+        if detection_error:
+            return jsonify({
+                "success": False,
+                "error": detection_error
+            }), 200
+        
+        # Analyze with OpenAI using detected timeframe
+        analysis = analyze_with_openai(
+            image_str=image_str,
+            image_format=image_format,
+            timeframe=timeframe,
+            action_type="single_analysis"
+        )
+        
+        return jsonify({
+            "success": True,
+            "analysis": analysis,
+            "detected_timeframe": timeframe
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": f"Analysis failed: {str(e)}"
+        }), 200

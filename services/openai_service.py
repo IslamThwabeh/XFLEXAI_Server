@@ -85,6 +85,77 @@ def init_openai():
         OPENAI_AVAILABLE = False
         return False
 
+def detect_timeframe_from_image(image_str, image_format):
+    """
+    Detect the timeframe from the chart image
+    Returns: (timeframe, error_message)
+    """
+    try:
+        print("🕵️ Detecting timeframe from image...")
+
+        system_prompt = """
+        You are a precise chart image analyzer. Your ONLY task is to detect the timeframe label in the trading chart image.
+
+        Look for text labels like:
+        - 'M1', 'M5', 'M15', 'M30' (Minutes)
+        - 'H1', 'H4' (Hours) 
+        - 'D1' (Daily)
+        - 'W1' (Weekly)
+        - 'MN1' (Monthly)
+
+        IMPORTANT:
+        - Focus on the top corners or chart header area where timeframe labels are typically displayed
+        - The label might be in different formats: 'M15', 'TF: M15', 'Timeframe: M15', '15m', '15M'
+        - Return ONLY the timeframe code in standard format: M1, M5, M15, M30, H1, H4, D1, W1, MN1
+        - If you cannot detect any timeframe, return 'UNKNOWN'
+        - DO NOT provide any explanation or additional text
+        - ONLY return the timeframe code or 'UNKNOWN'
+        """
+
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Detect the timeframe in this chart image. Return ONLY the timeframe code or 'UNKNOWN'."
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/{image_format};base64,{image_str}",
+                                "detail": "low"
+                            }
+                        }
+                    ]
+                }
+            ],
+            max_tokens=10
+        )
+
+        detected_timeframe = response.choices[0].message.content.strip().upper()
+        print(f"🕵️ Detected timeframe: {detected_timeframe}")
+
+        # Validate the detected timeframe
+        valid_timeframes = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1', 'W1', 'MN1']
+        
+        if detected_timeframe in valid_timeframes:
+            return detected_timeframe, None
+        else:
+            error_msg = "❌ لم يتم العثور على إطار زمني واضح في الصورة. يرجى تحميل صورة مخطط تحتوي على علامة الإطار الزمني (مثل M15, H4, D1)."
+            return None, error_msg
+
+    except Exception as e:
+        print(f"ERROR: Timeframe detection failed: {str(e)}")
+        error_msg = f"❌ فشل في تحليل الصورة: {str(e)}"
+        return None, error_msg
+
 def validate_timeframe_in_image(image_str, image_format, expected_timeframe):
     """
     Validate that the image contains the expected timeframe label
@@ -142,7 +213,6 @@ def validate_timeframe_in_image(image_str, image_format, expected_timeframe):
         if validation_result == "VALID":
             return True, None
         else:
-            # Fixed typo: "الخطاء" → "الخطأ"
             error_msg = f"❌ الخطأ: الصورة لا تحتوي على الإطار الزمني {expected_timeframe}. يرجى تحميل صورة تحتوي على {expected_timeframe}."
             return False, error_msg
 
@@ -199,6 +269,45 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 **التزم بعدم تجاوز {char_limit} حرف.**
 """
         max_tokens = char_limit // 2 + 50
+
+    elif action_type == "single_analysis":
+        char_limit = 1024
+        analysis_prompt = f"""
+أنت محلل فني محترف متخصص في تحليل العملات. قدم تحليلاً شاملاً ومفصلاً للرسم البياني.
+
+**المطلوب تحليل كامل يتضمن:**
+
+### 📊 التحليل الفني لشارت {timeframe}
+
+**🎯 الاتجاه العام وهيكل السوق:**
+- تحديد الاتجاه الرئيسي والثانوي
+- تحليل هيكل السوق من القمم والقيعان
+
+**📊 مستويات فيبوناتشي:**
+- تحديد مستويات فيبوناتشي الرئيسية
+- تحليل تفاعل السعر مع هذه المستويات
+
+**🛡️ الدعم والمقاومة:**
+- المستويات الرئيسية للدعم والمقاومة
+- المناطق الحرجة للكسر أو الارتداد
+
+**💧 تحليل السيولة:**
+- مناطق السيولة المحتملة
+- مناطق وقف الخسائر المتوقعة
+
+**⚠️ التنبيهات والمخاطر:**
+- المخاطر التي يجب تجنبها
+- أنماط انعكاس محتملة
+
+**💼 التوصيات العملية:**
+- سعر الدخول المناسب
+- وقف الخسائر المثالي
+- أهداف جني الأرباح
+- نصائح إدارة المخاطرة
+
+**التزم بتقديم تحليل عملي ومفيد لا يتجاوز {char_limit} حرف.**
+"""
+        max_tokens = char_limit // 2 + 100
 
     elif timeframe == "H4" and previous_analysis:
         char_limit = 1024
