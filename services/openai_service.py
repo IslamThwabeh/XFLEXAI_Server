@@ -224,6 +224,7 @@ def validate_timeframe_in_image(image_str, image_format, expected_timeframe):
 def analyze_with_openai(image_str, image_format, timeframe=None, previous_analysis=None, user_analysis=None, action_type="chart_analysis"):
     """
     Analyze an image or text using OpenAI with enhanced, detailed analysis.
+    OPTIMIZED VERSION - minimal changes for performance
     """
     global client
 
@@ -236,6 +237,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
         if not is_valid:
             return error_msg
 
+    # KEEP ALL EXISTING PROMPTS EXACTLY THE SAME - only change timeouts and image detail
     if action_type == "user_analysis_feedback":
         char_limit = 800
         analysis_prompt = f"""
@@ -429,6 +431,9 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
         raise RuntimeError("OpenAI client not initialized")
 
     try:
+        import time
+        start_time = time.time()
+        
         if image_str:
             print(f"🚨 OPENAI ANALYSIS: Analyzing image with {action_type}")
             response = client.chat.completions.create(
@@ -437,11 +442,12 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
                     {"role": "system", "content": f"أنت محلل فني محترف. التزم بعدم تجاوز {char_limit} حرف في ردك."},
                     {"role": "user", "content": [
                         {"type": "text", "text": analysis_prompt},
-                        {"type": "image_url", "image_url": {"url": f"data:image/{image_format.lower()};base64,{image_str}", "detail": "high"}}
+                        {"type": "image_url", "image_url": {"url": f"data:image/{image_format.lower()};base64,{image_str}", "detail": "low"}}  # CHANGED: "high" → "low"
                     ]}
                 ],
                 max_tokens=max_tokens,
-                temperature=0.7
+                temperature=0.7,
+                timeout=30  # ADDED: 30-second timeout
             )
         else:
             print(f"🚨 OPENAI ANALYSIS: Analyzing text with {action_type}")
@@ -452,13 +458,15 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
                     {"role": "user", "content": analysis_prompt}
                 ],
                 max_tokens=max_tokens,
-                temperature=0.7
+                temperature=0.7,
+                timeout=20  # ADDED: 20-second timeout for text
             )
 
         analysis = response.choices[0].message.content.strip()
-        print(f"🚨 OPENAI ANALYSIS: ✅ Analysis completed, length: {len(analysis)} chars")
+        processing_time = time.time() - start_time
+        print(f"🚨 OPENAI ANALYSIS: ✅ Analysis completed in {processing_time:.2f}s, length: {len(analysis)} chars")
 
-        # Backup enforcement of character limit
+        # Keep existing retry logic but with timeout
         if len(analysis) > char_limit + 200:
             print(f"🚨 OPENAI ANALYSIS: Analysis too long ({len(analysis)}), retrying with shorter version")
             retry_prompt = f"""
@@ -473,7 +481,8 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
                     {"role": "user", "content": retry_prompt}
                 ],
                 max_tokens=max_tokens,
-                temperature=0.7
+                temperature=0.7,
+                timeout=15  # ADDED: 15-second timeout for retry
             )
             analysis = retry_response.choices[0].message.content.strip()
             print(f"🚨 OPENAI ANALYSIS: ✅ Retry completed, new length: {len(analysis)} chars")
