@@ -366,31 +366,31 @@ def analyze_single_image():
     """
     try:
         print(f"🚨 ANALYZE-SINGLE: 📥 Received request at {datetime.now()}")
-        
+
         data = request.get_json()
         print(f"🚨 ANALYZE-SINGLE: 📥 Request data: {data}")
-        
+
         if not data:
             print("🚨 ANALYZE-SINGLE: ❌ No JSON data provided")
             return jsonify({
                 "success": False,
                 "error": "No JSON data provided"
             }), 200
-        
+
         image_url = data.get('image_url')
         print(f"🚨 ANALYZE-SINGLE: 🖼️ Image URL: {image_url}")
-        
+
         if not image_url:
             print("🚨 ANALYZE-SINGLE: ❌ Missing image_url")
             return jsonify({
-                "success": False, 
+                "success": False,
                 "error": "Missing image_url"
             }), 200
-        
+
         # Check OpenAI availability
         openai_available = current_app.config.get('OPENAI_AVAILABLE', False)
         print(f"🚨 ANALYZE-SINGLE: 🤖 OpenAI available: {openai_available}")
-        
+
         if not openai_available:
             openai_error = current_app.config.get('OPENAI_ERROR_MESSAGE', 'Unknown error')
             print(f"🚨 ANALYZE-SINGLE: ❌ OpenAI unavailable: {openai_error}")
@@ -399,33 +399,33 @@ def analyze_single_image():
                 "error": "OpenAI service unavailable",
                 "message": openai_error
             }), 200
-        
+
         # Load and encode image
         print(f"🚨 ANALYZE-SINGLE: 📥 Loading image from URL...")
         image_str, image_format = load_image_from_url(image_url)
         print(f"🚨 ANALYZE-SINGLE: 🖼️ Image loaded - String: {bool(image_str)}, Format: {image_format}")
-        
+
         if not image_str:
             print("🚨 ANALYZE-SINGLE: ❌ Could not load image from URL")
             return jsonify({
                 "success": False,
                 "error": "Could not load image from URL"
             }), 200
-        
+
         # Detect timeframe from image
         print(f"🚨 ANALYZE-SINGLE: 🔍 Detecting timeframe from image...")
         timeframe, detection_error = detect_timeframe_from_image(image_str, image_format)
         print(f"🚨 ANALYZE-SINGLE: 🔍 Timeframe detection result: {timeframe}, Error: {detection_error}")
-        
+
         if detection_error:
             print(f"🚨 ANALYZE-SINGLE: ❌ Timeframe detection failed: {detection_error}")
             return jsonify({
                 "success": False,
                 "error": detection_error
             }), 200
-        
+
         print(f"🚨 ANALYZE-SINGLE: ✅ Timeframe detected: {timeframe}")
-        
+
         # Analyze with OpenAI using detected timeframe
         print(f"🚨 ANALYZE-SINGLE: 🧠 Starting analysis with timeframe: {timeframe}")
         analysis = analyze_with_openai(
@@ -434,20 +434,20 @@ def analyze_single_image():
             timeframe=timeframe,
             action_type="single_analysis"
         )
-        
+
         print(f"🚨 ANALYZE-SINGLE: ✅ Analysis completed, length: {len(analysis)} chars")
-        
+
         return jsonify({
             "success": True,
             "analysis": analysis,
             "detected_timeframe": timeframe
         }), 200
-        
+
     except Exception as e:
         print(f"🚨 ANALYZE-SINGLE: ❌ Exception occurred: {str(e)}")
         import traceback
         print(f"🚨 ANALYZE-SINGLE: ❌ Stack trace: {traceback.format_exc()}")
-        
+
         return jsonify({
             "success": False,
             "error": f"Analysis failed: {str(e)}"
@@ -525,20 +525,22 @@ def analyze_user_drawn():
         # Analyze user-drawn analysis with OpenAI
         print(f"🚨 ANALYZE-USER-DRAWN: 🧠 Starting user-drawn analysis with timeframe: {timeframe}")
         
-        # Import the new function
+        # Import the updated function
         from services.openai_service import analyze_user_drawn_analysis
         
-        analysis = analyze_user_drawn_analysis(
+        # Now returns two values: feedback and analysis
+        feedback, analysis = analyze_user_drawn_analysis(
             image_str=image_str,
             image_format=image_format,
             timeframe=timeframe
         )
 
-        print(f"🚨 ANALYZE-USER-DRAWN: ✅ Analysis completed, length: {len(analysis)} chars")
+        print(f"🚨 ANALYZE-USER-DRAWN: ✅ Analysis completed - Feedback: {len(feedback)} chars, Analysis: {len(analysis)} chars")
 
         return jsonify({
             "success": True,
-            "analysis": analysis,
+            "feedback": feedback,      # Evaluation of user's drawn analysis
+            "analysis": analysis,      # Correct technical analysis
             "detected_timeframe": timeframe,
             "type": "user_drawn_feedback"
         }), 200

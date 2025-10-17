@@ -517,23 +517,27 @@ def analyze_user_drawn_analysis(image_str, image_format, timeframe=None):
     """
     Analyze a chart image with user-drawn analysis (lines, annotations, etc.)
     Provides feedback on the user's analysis and gives the correct technical analysis
+    Returns: (feedback, analysis) tuple
     """
     global client
 
     if not OPENAI_AVAILABLE:
         raise RuntimeError(f"OpenAI not available: {openai_error_message}")
 
-    char_limit = 1200  # Slightly more for combined feedback + analysis
+    feedback_char_limit = 800
+    analysis_char_limit = 800
+
     analysis_prompt = f"""
 أنت خبير تحليل فني ومدرس محترف. قم بتحليل الصورة التي تحتوي على رسم وتحليل المستخدم ثم:
 
-**الجزء 1: تقييم تحليل المستخدم المرسوم:**
+**الجزء 1: تقييم تحليل المستخدم المرسوم (التقييم):**
 - قيم الخطوط والدوائر والاشكال المرسومة على الرسم البياني
 - حدد ما إذا كانت الرسومات صحيحة تقنياً
 - اذكر نقاط القوة والضعف في تحليل المستخدم
 - قدم نقداً بناءً للرسومات والتحليل المرسوم
+- كن صادقاً وموضوعياً في التقييم
 
-**الجزء 2: التحليل الفني الصحيح:**
+**الجزء 2: التحليل الفني الصحيح (التحليل):**
 قدم تحليلاً فنياً شاملاً للرسم البياني يتضمن:
 
 ### 📊 التحليل الفني لشارت {timeframe}
@@ -544,11 +548,11 @@ def analyze_user_drawn_analysis(image_str, image_format, timeframe=None):
 **⚠️ المخاطر والتنبيهات**
 **💼 التوصيات العملية**
 
-**التزم بهذا الهيكل واجعل الرد واضحاً ومنظماً.**
-**اجمع بين التقييم والتحليل في رد واحد مترابط.**
-**التزم بعدم تجاوز {char_limit} حرف.**
+**التزم بهذا الهيكل واجعل كل جزء واضحاً ومنظماً.**
+**الجزء 1 (التقييم) يجب ألا يتجاوز {feedback_char_limit} حرف.**
+**الجزء 2 (التحليل) يجب ألا يتجاوز {analysis_char_limit} حرف.**
 """
-    max_tokens = char_limit // 2 + 150
+    max_tokens = (feedback_char_limit + analysis_char_limit) // 2 + 200
 
     if not client:
         raise RuntimeError("OpenAI client not initialized")
@@ -561,7 +565,7 @@ def analyze_user_drawn_analysis(image_str, image_format, timeframe=None):
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": f"أنت خبير تحليل فني ومدرس. التزم بعدم تجاوز {char_limit} حرف في ردك."},
+                {"role": "system", "content": f"أنت خبير تحليل فني ومدرس. أعد جزئين منفصلين: التقييم والتحليل."},
                 {"role": "user", "content": [
                     {"type": "text", "text": analysis_prompt},
                     {"type": "image_url", "image_url": {"url": f"data:image/{image_format.lower()};base64,{image_str}", "detail": "low"}}
@@ -572,12 +576,67 @@ def analyze_user_drawn_analysis(image_str, image_format, timeframe=None):
             timeout=30
         )
 
-        analysis = response.choices[0].message.content.strip()
+        full_response = response.choices[0].message.content.strip()
         processing_time = time.time() - start_time
-        print(f"🚨 OPENAI ANALYSIS: ✅ User-drawn analysis completed in {processing_time:.2f}s, length: {len(analysis)} chars")
+        print(f"🚨 OPENAI ANALYSIS: ✅ User-drawn analysis completed in {processing_time:.2f}s, length: {len(full_response)} chars")
 
-        return analysis
+        # Split the response into feedback and analysis parts
+        feedback, analysis = split_feedback_and_analysis(full_response)
+
+        print(f"🚨 OPENAI ANALYSIS: ✅ Split response - Feedback: {len(feedback)} chars, Analysis: {len(analysis)} chars")
+
+        return feedback, analysis
 
     except Exception as e:
         print(f"🚨 OPENAI ANALYSIS: ❌ User-drawn analysis failed: {str(e)}")
         raise RuntimeError(f"OpenAI analysis failed: {str(e)}")
+
+def split_feedback_and_analysis(full_response):
+    """
+    Split the full response into feedback and analysis parts
+    Returns: (feedback, analysis)
+    """
+    # Look for common section dividers in Arabic
+    dividers = [
+        "**الجزء 2:**",
+        "الجزء 2:",
+        "**التحليل الفني الصحيح:**",
+        "التحليل الفني الصحيح:",
+        "### 📊 التحليل الفني"
+    ]
+
+    feedback = full_response
+    analysis = ""
+
+    for divider in dividers:
+        if divider in full_response:
+            parts = full_response.split(divider, 1)
+            if len(parts) == 2:
+                feedback = parts[0].strip()
+                analysis = parts[1].strip()
+                break
+
+    # If no divider found, try to split by first major heading in the analysis part
+    if not analysis:
+        analysis_keywords = ["### 📊", "**🎯 الاتجاه العام**", "🎯 الاتجاه العام", "📊 مستويات فيبوناتشي"]
+        for keyword in analysis_keywords:
+            if keyword in full_response:
+                parts = full_response.split(keyword, 1)
+                if len(parts) == 2:
+                    feedback = parts[0].strip()
+                    analysis = keyword + parts[1].strip()
+                break
+
+    # If still no split, use first 60% as feedback and rest as analysis
+    if not analysis:
+        split_index = int(len(full_response) * 0.6)
+        feedback = full_response[:split_index].strip()
+        analysis = full_response[split_index:].strip()
+
+    # Clean up the feedback part - remove any analysis section headers from feedback
+    analysis_headers = ["التحليل الفني", "📊 التحليل الفني", "### 📊"]
+    for header in analysis_headers:
+        if header in feedback:
+            feedback = feedback.split(header)[0].strip()
+
+    return feedback, analysis
