@@ -5,7 +5,7 @@ from flask import Blueprint, request, jsonify, current_app
 from services.openai_service import (
     analyze_with_openai,
     load_image_from_url,
-    detect_timeframe_from_image
+    detect_timeframe_from_image,
     analyze_user_drawn_analysis
 )
 from database.operations import get_user_by_telegram_id, redeem_registration_key
