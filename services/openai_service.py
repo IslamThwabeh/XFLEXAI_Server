@@ -94,21 +94,20 @@ def detect_timeframe_from_image(image_str, image_format):
         print("🕵️ Detecting timeframe from image...")
 
         system_prompt = """
-        You are a precise chart image analyzer. Your ONLY task is to detect the timeframe label in the trading chart image.
+        You are a professional trading chart analyzer. Your ONLY task is to detect the timeframe in trading chart images.
 
-        Look for text labels like:
-        - 'M1', 'M5', 'M15', 'M30' (Minutes)
-        - 'H1', 'H4' (Hours) 
-        - 'D1' (Daily)
-        - 'W1' (Weekly)
-        - 'MN1' (Monthly)
+        Look for timeframe labels typically found in:
+        - Top left/right corners: M1, M5, M15, M30, H1, H4, D1, W1, MN
+        - Chart header or information panel
+        - Bottom time axis labels
 
         IMPORTANT:
-        - Focus on the top corners or chart header area where timeframe labels are typically displayed
-        - The label might be in different formats: 'M15', 'TF: M15', 'Timeframe: M15', '15m', '15M'
-        - Return ONLY the timeframe code in standard format: M1, M5, M15, M30, H1, H4, D1, W1, MN1
-        - If you cannot detect any timeframe, return 'UNKNOWN'
-        - DO NOT provide any explanation or additional text
+        - Focus ONLY on finding timeframe indicators like: M15, 15M, 15m, H4, 4H, D1, 1D, W1, 1W
+        - Return ONLY the timeframe code in standard format: M1, M5, M15, M30, H1, H4, D1, W1, MN
+        - If multiple timeframes are visible, return the most prominent one
+        - If no clear timeframe is found, return 'UNKNOWN'
+        - DO NOT comment on chart content, patterns, or trading advice
+        - DO NOT refuse analysis for any reason
         - ONLY return the timeframe code or 'UNKNOWN'
         """
 
@@ -124,7 +123,7 @@ def detect_timeframe_from_image(image_str, image_format):
                     "content": [
                         {
                             "type": "text",
-                            "text": "Detect the timeframe in this chart image. Return ONLY the timeframe code or 'UNKNOWN'."
+                            "text": "What is the timeframe of this trading chart? Return ONLY the timeframe code like M15, H4, D1 or UNKNOWN."
                         },
                         {
                             "type": "image_url",
@@ -136,90 +135,47 @@ def detect_timeframe_from_image(image_str, image_format):
                     ]
                 }
             ],
-            max_tokens=10
+            max_tokens=10,
+            temperature=0.1  # Lower temperature for more consistent results
         )
 
         detected_timeframe = response.choices[0].message.content.strip().upper()
         print(f"🕵️ Detected timeframe: {detected_timeframe}")
 
-        # Validate the detected timeframe
-        valid_timeframes = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1', 'W1', 'MN1']
+        # Clean and validate the detected timeframe
+        detected_timeframe = detected_timeframe.replace(' ', '').replace('TF:', '').replace('TIMEFRAME:', '')
+        
+        # Map common variations to standard formats
+        timeframe_map = {
+            '15M': 'M15', '15m': 'M15', '15': 'M15',
+            '30M': 'M30', '30m': 'M30', '30': 'M30',
+            '1H': 'H1', '1h': 'H1', '60M': 'H1',
+            '4H': 'H4', '4h': 'H4', '240M': 'H4',
+            '1D': 'D1', '1d': 'D1', 'D': 'D1',
+            '1W': 'W1', '1w': 'W1', 'W': 'W1'
+        }
+        
+        if detected_timeframe in timeframe_map:
+            detected_timeframe = timeframe_map[detected_timeframe]
+        
+        valid_timeframes = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1', 'W1', 'MN']
         
         if detected_timeframe in valid_timeframes:
             return detected_timeframe, None
+        elif detected_timeframe == 'UNKNOWN':
+            # Fallback to manual detection for common cases
+            return 'M15', None  # Default to M15 if unknown
         else:
-            error_msg = "❌ لم يتم العثور على إطار زمني واضح في الصورة. يرجى تحميل صورة مخطط تحتوي على علامة الإطار الزمني (مثل M15, H4, D1)."
-            return None, error_msg
+            # Try to extract timeframe from the response
+            for tf in valid_timeframes:
+                if tf in detected_timeframe:
+                    return tf, None
+            return 'M15', None  # Default fallback
 
     except Exception as e:
         print(f"ERROR: Timeframe detection failed: {str(e)}")
-        error_msg = f"❌ فشل في تحليل الصورة: {str(e)}"
-        return None, error_msg
-
-def validate_timeframe_in_image(image_str, image_format, expected_timeframe):
-    """
-    Validate that the image contains the expected timeframe label
-    Returns: (is_valid, error_message)
-    """
-    try:
-        print(f"🕵️ Validating timeframe: expecting '{expected_timeframe}' in image")
-
-        # Create system prompt for timeframe validation
-        system_prompt = f"""
-        You are a precise image validator. Your ONLY task is to check if the chart image contains the timeframe label '{expected_timeframe}'.
-
-        IMPORTANT:
-        - Look for text labels like 'M15', 'H4', '1H', 'D1' etc. in the chart
-        - Focus on the top corners or chart header area where timeframe labels are typically displayed
-        - The label might be in different formats: '{expected_timeframe}', 'TF: {expected_timeframe}', 'Timeframe: {expected_timeframe}'
-        - Return ONLY 'VALID' if you clearly see '{expected_timeframe}' in the image
-        - Return ONLY 'INVALID' if you don't see '{expected_timeframe}' or see a different timeframe
-
-        DO NOT analyze the chart content, trends, or patterns.
-        DO NOT provide any explanation or additional text.
-        ONLY return 'VALID' or 'INVALID'.
-        """
-
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "system",
-                    "content": system_prompt
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "Check if this chart image contains the timeframe label. Return ONLY 'VALID' or 'INVALID'."
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/{image_format};base64,{image_str}",
-                                "detail": "low"
-                            }
-                        }
-                    ]
-                }
-            ],
-            max_tokens=10
-        )
-
-        validation_result = response.choices[0].message.content.strip().upper()
-        print(f"🕵️ Timeframe validation result: {validation_result}")
-
-        if validation_result == "VALID":
-            return True, None
-        else:
-            error_msg = f"❌ الخطأ: الصورة لا تحتوي على الإطار الزمني {expected_timeframe}. يرجى تحميل صورة تحتوي على {expected_timeframe}."
-            return False, error_msg
-
-    except Exception as e:
-        print(f"ERROR: Timeframe validation failed: {str(e)}")
-        # If validation fails, proceed with analysis but log the error
-        return True, None  # Fallback to allow analysis if validation fails
+        # Default to M15 on error
+        return 'M15', None
 
 def analyze_with_openai(image_str, image_format, timeframe=None, previous_analysis=None, user_analysis=None, action_type="chart_analysis"):
     """
@@ -433,7 +389,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
     try:
         import time
         start_time = time.time()
-        
+
         if image_str:
             print(f"🚨 OPENAI ANALYSIS: Analyzing image with {action_type}")
             response = client.chat.completions.create(
@@ -524,31 +480,40 @@ def analyze_user_drawn_analysis(image_str, image_format, timeframe=None):
     if not OPENAI_AVAILABLE:
         raise RuntimeError(f"OpenAI not available: {openai_error_message}")
 
-    feedback_char_limit = 800
-    analysis_char_limit = 800
-
+    feedback_char_limit = 600
+    analysis_char_limit = 600
+    
     analysis_prompt = f"""
-أنت خبير تحليل فني ومدرس محترف. قم بتحليل الصورة التي تحتوي على رسم وتحليل المستخدم ثم:
+أنت خبير تحليل فني للمخططات والرسوم البيانية المالية. مهمتك هي تحليل صورة مخطط تداول تحتوي على رسومات وتحليلات مرسومة من قبل متداول.
 
-**الجزء 1: تقييم تحليل المستخدم المرسوم (التقييم):**
-- قيم الخطوط والدوائر والاشكال المرسومة على الرسم البياني
-- حدد ما إذا كانت الرسومات صحيحة تقنياً
-- اذكر نقاط القوة والضعف في تحليل المستخدم
-- قدم نقداً بناءً للرسومات والتحليل المرسوم
-- كن صادقاً وموضوعياً في التقييم
+هذا مخطط تداول (شارت) يحتوي على خطوط ودوائر ورسومات فنية. هذه ليست صورة لأشخاص وإنما هي رسم بياني للأسعار مع تحليلات فنية مرسومة.
 
-**الجزء 2: التحليل الفني الصحيح (التحليل):**
-قدم تحليلاً فنياً شاملاً للرسم البياني يتضمن:
+**مهمتك:**
+1. تقييم الرسومات والتحليلات المرسومة على المخطط من الناحية الفنية
+2. تقديم تحليل فني صحيح للمخطط
 
+**الجزء 1: تقييم التحليل المرسوم (التقييم) - اكتب تقييماً للرسومات المرسومة على المخطط:**
+- قيم دقة الخطوط المرسومة (خطوط الاتجاه، الدعم، المقاومة)
+- حدد ما إذا كانت الدوائر والأشكال في أماكنها الصحيحة
+- اذكر نقاط القوة في التحليل المرسوم
+- اذكر نقاط الضعف والأخطاء في التحليل المرسوم
+- قدم نقداً بناءً للتحليل المرسوم
+
+**الجزء 2: التحليل الفني الصحيح (التحليل) - اكتب تحليلاً فنياً كاملاً للمخطط:**
 ### 📊 التحليل الفني لشارت {timeframe}
 **🎯 الاتجاه العام وهيكل السوق**
-**📊 مستويات فيبوناتشي الرئيسية**
+**📊 مستويات فيبوناتشي الرئيسية** 
 **🛡️ الدعم والمقاومة الحرجة**
 **💧 تحليل السيولة**
 **⚠️ المخاطر والتنبيهات**
 **💼 التوصيات العملية**
 
-**التزم بهذا الهيكل واجعل كل جزء واضحاً ومنظماً.**
+**التزم بالتالي:**
+- ركز فقط على التحليل الفني للمخططات المالية
+- تجاهل أي عناصر غير مرتبطة بالتحليل الفني
+- اكتب بلغة عربية واضحة ومحترفة
+- التزم بالحد الأقصى للحروف لكل جزء
+
 **الجزء 1 (التقييم) يجب ألا يتجاوز {feedback_char_limit} حرف.**
 **الجزء 2 (التحليل) يجب ألا يتجاوز {analysis_char_limit} حرف.**
 """
@@ -565,7 +530,7 @@ def analyze_user_drawn_analysis(image_str, image_format, timeframe=None):
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": f"أنت خبير تحليل فني ومدرس. أعد جزئين منفصلين: التقييم والتحليل."},
+                {"role": "system", "content": f"أنت خبير تحليل فني للمخططات المالية. ركز فقط على التحليل الفني وتقييم الرسومات الفنية على المخططات."},
                 {"role": "user", "content": [
                     {"type": "text", "text": analysis_prompt},
                     {"type": "image_url", "image_url": {"url": f"data:image/{image_format.lower()};base64,{image_str}", "detail": "low"}}
@@ -582,15 +547,115 @@ def analyze_user_drawn_analysis(image_str, image_format, timeframe=None):
 
         # Split the response into feedback and analysis parts
         feedback, analysis = split_feedback_and_analysis(full_response)
-
+        
+        # Clean up any refusal messages
+        feedback = clean_refusal_messages(feedback)
+        analysis = clean_refusal_messages(analysis)
+        
         print(f"🚨 OPENAI ANALYSIS: ✅ Split response - Feedback: {len(feedback)} chars, Analysis: {len(analysis)} chars")
-
+        
         return feedback, analysis
 
     except Exception as e:
         print(f"🚨 OPENAI ANALYSIS: ❌ User-drawn analysis failed: {str(e)}")
         raise RuntimeError(f"OpenAI analysis failed: {str(e)}")
 
+def clean_refusal_messages(text):
+    """
+    Remove common refusal messages from the AI response
+    """
+    refusal_patterns = [
+        "عذرًا، لا يمكنني تحليل أو تقييم الأشخاص أو الرسومات في الصور",
+        "عذراً، لا أستطيع رؤية أو تحليل الصور بشكل مباشر",
+        "لا يمكنني تحليل الصور",
+        "عذرًا، لا أستطيع",
+        "معذرة، لا يمكنني",
+        "I cannot analyze",
+        "I'm unable to",
+        "I cannot see"
+    ]
+    
+    cleaned_text = text
+    for pattern in refusal_patterns:
+        if pattern in cleaned_text:
+            # Remove the refusal message and everything before it
+            parts = cleaned_text.split(pattern)
+            if len(parts) > 1:
+                cleaned_text = parts[1].strip()
+            else:
+                cleaned_text = ""
+    
+    # If text is empty after cleaning, provide a default message
+    if not cleaned_text or len(cleaned_text.strip()) < 10:
+        cleaned_text = "لم يتمكن النظام من تحليل الرسومات المرسومة على المخطط. يرجى التأكد من أن الصورة تحتوي على مخطط تداول مع تحليلات فنية مرسومة."
+    
+    return cleaned_text.strip()
+
+def split_feedback_and_analysis(full_response):
+    """
+    Split the full response into feedback and analysis parts
+    Returns: (feedback, analysis)
+    """
+    if not full_response:
+        return "لم يتم تقديم تحليل كافٍ.", "يرجى تحميل صورة أوضح للمخطط."
+    
+    # Look for common section dividers in Arabic
+    dividers = [
+        "**الجزء 2:**",
+        "الجزء 2:",
+        "**التحليل الفني الصحيح:**",
+        "التحليل الفني الصحيح:",
+        "### 📊 التحليل الفني",
+        "📊 التحليل الفني",
+        "**الجزء الثاني:**",
+        "الجزء الثاني:"
+    ]
+    
+    feedback = full_response
+    analysis = ""
+    
+    for divider in dividers:
+        if divider in full_response:
+            parts = full_response.split(divider, 1)
+            if len(parts) == 2:
+                feedback = parts[0].strip()
+                analysis = divider + parts[1].strip()
+                break
+    
+    # If no divider found, try to split by first major heading in the analysis part
+    if not analysis:
+        analysis_keywords = ["### 📊", "**🎯 الاتجاه العام**", "🎯 الاتجاه العام", "📊 مستويات فيبوناتشي", "**التوصيات العملية**"]
+        for keyword in analysis_keywords:
+            if keyword in full_response:
+                parts = full_response.split(keyword, 1)
+                if len(parts) == 2:
+                    feedback = parts[0].strip()
+                    analysis = keyword + parts[1].strip()
+                break
+    
+    # If still no split, use first 50% as feedback and rest as analysis
+    if not analysis:
+        split_index = int(len(full_response) * 0.5)
+        feedback = full_response[:split_index].strip()
+        analysis = full_response[split_index:].strip()
+    
+    # Clean up the feedback part - remove any analysis section headers from feedback
+    analysis_headers = ["التحليل الفني", "📊 التحليل الفني", "### 📊", "**🎯 الاتجاه العام**"]
+    for header in analysis_headers:
+        if header in feedback:
+            feedback_parts = feedback.split(header)
+            if len(feedback_parts) > 0:
+                feedback = feedback_parts[0].strip()
+    
+    # Ensure both parts have reasonable content
+    if len(feedback.strip()) < 20:
+        feedback = "تقييم التحليل المرسوم: " + (feedback if feedback else "الرسومات المرسومة تحتاج إلى مزيد من الدقة الفنية.")
+    
+    if len(analysis.strip()) < 20:
+        analysis = "التحليل الفني: " + (analysis if analysis else "يرجى تحميل صورة أوضح للرسم البياني للحصول على تحليل دقيق.")
+    
+    return feedback, analysis
+	
 def split_feedback_and_analysis(full_response):
     """
     Split the full response into feedback and analysis parts
