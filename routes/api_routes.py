@@ -5,7 +5,8 @@ from flask import Blueprint, request, jsonify, current_app
 from services.openai_service import (
     analyze_with_openai,
     load_image_from_url,
-    detect_timeframe_from_image  # ADD THIS IMPORT
+    detect_timeframe_from_image
+    analyze_user_drawn_analysis
 )
 from database.operations import get_user_by_telegram_id, redeem_registration_key
 
@@ -447,6 +448,106 @@ def analyze_single_image():
         import traceback
         print(f"🚨 ANALYZE-SINGLE: ❌ Stack trace: {traceback.format_exc()}")
         
+        return jsonify({
+            "success": False,
+            "error": f"Analysis failed: {str(e)}"
+        }), 200
+
+@api_bp.route('/analyze-user-drawn', methods=['POST'])
+def analyze_user_drawn():
+    """
+    Analyze a chart image with user-drawn analysis (lines, annotations, etc.)
+    Provides feedback on user's analysis and correct technical analysis
+    Returns 200 always with success/failure in response body
+    """
+    try:
+        print(f"🚨 ANALYZE-USER-DRAWN: 📥 Received request at {datetime.now()}")
+
+        data = request.get_json()
+        print(f"🚨 ANALYZE-USER-DRAWN: 📥 Request data: {data}")
+
+        if not data:
+            print("🚨 ANALYZE-USER-DRAWN: ❌ No JSON data provided")
+            return jsonify({
+                "success": False,
+                "error": "No JSON data provided"
+            }), 200
+
+        image_url = data.get('image_url')
+        print(f"🚨 ANALYZE-USER-DRAWN: 🖼️ Image URL: {image_url}")
+
+        if not image_url:
+            print("🚨 ANALYZE-USER-DRAWN: ❌ Missing image_url")
+            return jsonify({
+                "success": False,
+                "error": "Missing image_url"
+            }), 200
+
+        # Check OpenAI availability
+        openai_available = current_app.config.get('OPENAI_AVAILABLE', False)
+        print(f"🚨 ANALYZE-USER-DRAWN: 🤖 OpenAI available: {openai_available}")
+
+        if not openai_available:
+            openai_error = current_app.config.get('OPENAI_ERROR_MESSAGE', 'Unknown error')
+            print(f"🚨 ANALYZE-USER-DRAWN: ❌ OpenAI unavailable: {openai_error}")
+            return jsonify({
+                "success": False,
+                "error": "OpenAI service unavailable",
+                "message": openai_error
+            }), 200
+
+        # Load and encode image
+        print(f"🚨 ANALYZE-USER-DRAWN: 📥 Loading image from URL...")
+        image_str, image_format = load_image_from_url(image_url)
+        print(f"🚨 ANALYZE-USER-DRAWN: 🖼️ Image loaded - String: {bool(image_str)}, Format: {image_format}")
+
+        if not image_str:
+            print("🚨 ANALYZE-USER-DRAWN: ❌ Could not load image from URL")
+            return jsonify({
+                "success": False,
+                "error": "Could not load image from URL"
+            }), 200
+
+        # Detect timeframe from image
+        print(f"🚨 ANALYZE-USER-DRAWN: 🔍 Detecting timeframe from image...")
+        timeframe, detection_error = detect_timeframe_from_image(image_str, image_format)
+        print(f"🚨 ANALYZE-USER-DRAWN: 🔍 Timeframe detection result: {timeframe}, Error: {detection_error}")
+
+        if detection_error:
+            print(f"🚨 ANALYZE-USER-DRAWN: ❌ Timeframe detection failed: {detection_error}")
+            return jsonify({
+                "success": False,
+                "error": detection_error
+            }), 200
+
+        print(f"🚨 ANALYZE-USER-DRAWN: ✅ Timeframe detected: {timeframe}")
+
+        # Analyze user-drawn analysis with OpenAI
+        print(f"🚨 ANALYZE-USER-DRAWN: 🧠 Starting user-drawn analysis with timeframe: {timeframe}")
+        
+        # Import the new function
+        from services.openai_service import analyze_user_drawn_analysis
+        
+        analysis = analyze_user_drawn_analysis(
+            image_str=image_str,
+            image_format=image_format,
+            timeframe=timeframe
+        )
+
+        print(f"🚨 ANALYZE-USER-DRAWN: ✅ Analysis completed, length: {len(analysis)} chars")
+
+        return jsonify({
+            "success": True,
+            "analysis": analysis,
+            "detected_timeframe": timeframe,
+            "type": "user_drawn_feedback"
+        }), 200
+
+    except Exception as e:
+        print(f"🚨 ANALYZE-USER-DRAWN: ❌ Exception occurred: {str(e)}")
+        import traceback
+        print(f"🚨 ANALYZE-USER-DRAWN: ❌ Stack trace: {traceback.format_exc()}")
+
         return jsonify({
             "success": False,
             "error": f"Analysis failed: {str(e)}"

@@ -512,3 +512,72 @@ def load_image_from_url(image_url):
     except Exception as e:
         print(f"🚨 IMAGE LOAD: ❌ Error loading image: {e}")
         return None, None
+
+def analyze_user_drawn_analysis(image_str, image_format, timeframe=None):
+    """
+    Analyze a chart image with user-drawn analysis (lines, annotations, etc.)
+    Provides feedback on the user's analysis and gives the correct technical analysis
+    """
+    global client
+
+    if not OPENAI_AVAILABLE:
+        raise RuntimeError(f"OpenAI not available: {openai_error_message}")
+
+    char_limit = 1200  # Slightly more for combined feedback + analysis
+    analysis_prompt = f"""
+أنت خبير تحليل فني ومدرس محترف. قم بتحليل الصورة التي تحتوي على رسم وتحليل المستخدم ثم:
+
+**الجزء 1: تقييم تحليل المستخدم المرسوم:**
+- قيم الخطوط والدوائر والاشكال المرسومة على الرسم البياني
+- حدد ما إذا كانت الرسومات صحيحة تقنياً
+- اذكر نقاط القوة والضعف في تحليل المستخدم
+- قدم نقداً بناءً للرسومات والتحليل المرسوم
+
+**الجزء 2: التحليل الفني الصحيح:**
+قدم تحليلاً فنياً شاملاً للرسم البياني يتضمن:
+
+### 📊 التحليل الفني لشارت {timeframe}
+**🎯 الاتجاه العام وهيكل السوق**
+**📊 مستويات فيبوناتشي الرئيسية**
+**🛡️ الدعم والمقاومة الحرجة**
+**💧 تحليل السيولة**
+**⚠️ المخاطر والتنبيهات**
+**💼 التوصيات العملية**
+
+**التزم بهذا الهيكل واجعل الرد واضحاً ومنظماً.**
+**اجمع بين التقييم والتحليل في رد واحد مترابط.**
+**التزم بعدم تجاوز {char_limit} حرف.**
+"""
+    max_tokens = char_limit // 2 + 150
+
+    if not client:
+        raise RuntimeError("OpenAI client not initialized")
+
+    try:
+        import time
+        start_time = time.time()
+
+        print(f"🚨 OPENAI ANALYSIS: Analyzing user-drawn analysis with timeframe: {timeframe}")
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": f"أنت خبير تحليل فني ومدرس. التزم بعدم تجاوز {char_limit} حرف في ردك."},
+                {"role": "user", "content": [
+                    {"type": "text", "text": analysis_prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/{image_format.lower()};base64,{image_str}", "detail": "low"}}
+                ]}
+            ],
+            max_tokens=max_tokens,
+            temperature=0.7,
+            timeout=30
+        )
+
+        analysis = response.choices[0].message.content.strip()
+        processing_time = time.time() - start_time
+        print(f"🚨 OPENAI ANALYSIS: ✅ User-drawn analysis completed in {processing_time:.2f}s, length: {len(analysis)} chars")
+
+        return analysis
+
+    except Exception as e:
+        print(f"🚨 OPENAI ANALYSIS: ❌ User-drawn analysis failed: {str(e)}")
+        raise RuntimeError(f"OpenAI analysis failed: {str(e)}")
