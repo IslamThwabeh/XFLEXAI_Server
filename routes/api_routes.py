@@ -6,7 +6,8 @@ from services.openai_service import (
     analyze_with_openai,
     load_image_from_url,
     detect_timeframe_from_image,
-    analyze_user_drawn_analysis
+    analyze_technical_chart,
+    analyze_user_drawn_feedback_simple
 )
 from database.operations import get_user_by_telegram_id, redeem_registration_key
 
@@ -356,8 +357,7 @@ def clear_sessions():
         "status": "sessions_cleared"
     })
 
-# Below API to handle single image analysis:
-
+# Single image analysis endpoint (keep as is)
 @api_bp.route('/analyze-single', methods=['POST'])
 def analyze_single_image():
     """
@@ -453,104 +453,194 @@ def analyze_single_image():
             "error": f"Analysis failed: {str(e)}"
         }), 200
 
-@api_bp.route('/analyze-user-drawn', methods=['POST'])
-def analyze_user_drawn():
+# New endpoints for two-step user drawn analysis
+@api_bp.route('/analyze-technical', methods=['POST'])
+def analyze_technical():
     """
-    Analyze a chart image with user-drawn analysis (lines, annotations, etc.)
-    Provides feedback on user's analysis and correct technical analysis
-    Returns 200 always with success/failure in response body
+    Analyze the chart for technical analysis only
     """
     try:
-        print(f"🚨 ANALYZE-USER-DRAWN: 📥 Received request at {datetime.now()}")
-
+        print(f"🚨 ANALYZE-TECHNICAL: 📥 Received request at {datetime.now()}")
+        
         data = request.get_json()
-        print(f"🚨 ANALYZE-USER-DRAWN: 📥 Request data: {data}")
-
+        print(f"🚨 ANALYZE-TECHNICAL: 📥 Request data: {data}")
+        
         if not data:
-            print("🚨 ANALYZE-USER-DRAWN: ❌ No JSON data provided")
             return jsonify({
                 "success": False,
                 "error": "No JSON data provided"
             }), 200
-
+        
         image_url = data.get('image_url')
-        print(f"🚨 ANALYZE-USER-DRAWN: 🖼️ Image URL: {image_url}")
-
+        print(f"🚨 ANALYZE-TECHNICAL: 🖼️ Image URL: {image_url}")
+        
         if not image_url:
-            print("🚨 ANALYZE-USER-DRAWN: ❌ Missing image_url")
             return jsonify({
-                "success": False,
+                "success": False, 
                 "error": "Missing image_url"
             }), 200
-
+        
         # Check OpenAI availability
         openai_available = current_app.config.get('OPENAI_AVAILABLE', False)
-        print(f"🚨 ANALYZE-USER-DRAWN: 🤖 OpenAI available: {openai_available}")
-
+        print(f"🚨 ANALYZE-TECHNICAL: 🤖 OpenAI available: {openai_available}")
+        
         if not openai_available:
             openai_error = current_app.config.get('OPENAI_ERROR_MESSAGE', 'Unknown error')
-            print(f"🚨 ANALYZE-USER-DRAWN: ❌ OpenAI unavailable: {openai_error}")
             return jsonify({
                 "success": False,
                 "error": "OpenAI service unavailable",
                 "message": openai_error
             }), 200
-
+        
         # Load and encode image
-        print(f"🚨 ANALYZE-USER-DRAWN: 📥 Loading image from URL...")
+        print(f"🚨 ANALYZE-TECHNICAL: 📥 Loading image from URL...")
         image_str, image_format = load_image_from_url(image_url)
-        print(f"🚨 ANALYZE-USER-DRAWN: 🖼️ Image loaded - String: {bool(image_str)}, Format: {image_format}")
-
+        print(f"🚨 ANALYZE-TECHNICAL: 🖼️ Image loaded - String: {bool(image_str)}, Format: {image_format}")
+        
         if not image_str:
-            print("🚨 ANALYZE-USER-DRAWN: ❌ Could not load image from URL")
             return jsonify({
                 "success": False,
                 "error": "Could not load image from URL"
             }), 200
-
+        
         # Detect timeframe from image
-        print(f"🚨 ANALYZE-USER-DRAWN: 🔍 Detecting timeframe from image...")
+        print(f"🚨 ANALYZE-TECHNICAL: 🔍 Detecting timeframe from image...")
         timeframe, detection_error = detect_timeframe_from_image(image_str, image_format)
-        print(f"🚨 ANALYZE-USER-DRAWN: 🔍 Timeframe detection result: {timeframe}, Error: {detection_error}")
-
+        print(f"🚨 ANALYZE-TECHNICAL: 🔍 Timeframe detection result: {timeframe}, Error: {detection_error}")
+        
         if detection_error:
-            print(f"🚨 ANALYZE-USER-DRAWN: ❌ Timeframe detection failed: {detection_error}")
             return jsonify({
                 "success": False,
                 "error": detection_error
             }), 200
-
-        print(f"🚨 ANALYZE-USER-DRAWN: ✅ Timeframe detected: {timeframe}")
-
-        # Analyze user-drawn analysis with OpenAI
-        print(f"🚨 ANALYZE-USER-DRAWN: 🧠 Starting user-drawn analysis with timeframe: {timeframe}")
         
-        # Import the updated function
-        from services.openai_service import analyze_user_drawn_analysis
+        print(f"🚨 ANALYZE-TECHNICAL: ✅ Timeframe detected: {timeframe}")
         
-        # Now returns two values: feedback and analysis
-        feedback, analysis = analyze_user_drawn_analysis(
+        # Analyze technical chart only
+        print(f"🚨 ANALYZE-TECHNICAL: 🧠 Starting technical analysis with timeframe: {timeframe}")
+        
+        analysis = analyze_technical_chart(
             image_str=image_str,
             image_format=image_format,
             timeframe=timeframe
         )
-
-        print(f"🚨 ANALYZE-USER-DRAWN: ✅ Analysis completed - Feedback: {len(feedback)} chars, Analysis: {len(analysis)} chars")
-
+        
+        print(f"🚨 ANALYZE-TECHNICAL: ✅ Technical analysis completed, length: {len(analysis)} chars")
+        
         return jsonify({
             "success": True,
-            "feedback": feedback,      # Evaluation of user's drawn analysis
-            "analysis": analysis,      # Correct technical analysis
+            "analysis": analysis,
             "detected_timeframe": timeframe,
-            "type": "user_drawn_feedback"
+            "type": "technical_analysis"
         }), 200
-
+        
     except Exception as e:
-        print(f"🚨 ANALYZE-USER-DRAWN: ❌ Exception occurred: {str(e)}")
+        print(f"🚨 ANALYZE-TECHNICAL: ❌ Exception occurred: {str(e)}")
         import traceback
-        print(f"🚨 ANALYZE-USER-DRAWN: ❌ Stack trace: {traceback.format_exc()}")
-
+        print(f"🚨 ANALYZE-TECHNICAL: ❌ Stack trace: {traceback.format_exc()}")
+        
         return jsonify({
             "success": False,
-            "error": f"Analysis failed: {str(e)}"
+            "error": f"Technical analysis failed: {str(e)}"
         }), 200
+
+@api_bp.route('/analyze-user-feedback', methods=['POST'])
+def analyze_user_feedback():
+    """
+    Analyze user's drawn analysis and provide feedback
+    """
+    try:
+        print(f"🚨 ANALYZE-USER-FEEDBACK: 📥 Received request at {datetime.now()}")
+        
+        data = request.get_json()
+        print(f"🚨 ANALYZE-USER-FEEDBACK: 📥 Request data: {data}")
+        
+        if not data:
+            return jsonify({
+                "success": False,
+                "error": "No JSON data provided"
+            }), 200
+        
+        image_url = data.get('image_url')
+        print(f"🚨 ANALYZE-USER-FEEDBACK: 🖼️ Image URL: {image_url}")
+        
+        if not image_url:
+            return jsonify({
+                "success": False, 
+                "error": "Missing image_url"
+            }), 200
+        
+        # Check OpenAI availability
+        openai_available = current_app.config.get('OPENAI_AVAILABLE', False)
+        print(f"🚨 ANALYZE-USER-FEEDBACK: 🤖 OpenAI available: {openai_available}")
+        
+        if not openai_available:
+            openai_error = current_app.config.get('OPENAI_ERROR_MESSAGE', 'Unknown error')
+            return jsonify({
+                "success": False,
+                "error": "OpenAI service unavailable",
+                "message": openai_error
+            }), 200
+        
+        # Load and encode image
+        print(f"🚨 ANALYZE-USER-FEEDBACK: 📥 Loading image from URL...")
+        image_str, image_format = load_image_from_url(image_url)
+        print(f"🚨 ANALYZE-USER-FEEDBACK: 🖼️ Image loaded - String: {bool(image_str)}, Format: {image_format}")
+        
+        if not image_str:
+            return jsonify({
+                "success": False,
+                "error": "Could not load image from URL"
+            }), 200
+        
+        # Detect timeframe from image
+        print(f"🚨 ANALYZE-USER-FEEDBACK: 🔍 Detecting timeframe from image...")
+        timeframe, detection_error = detect_timeframe_from_image(image_str, image_format)
+        print(f"🚨 ANALYZE-USER-FEEDBACK: 🔍 Timeframe detection result: {timeframe}, Error: {detection_error}")
+        
+        if detection_error:
+            return jsonify({
+                "success": False,
+                "error": detection_error
+            }), 200
+        
+        print(f"🚨 ANALYZE-USER-FEEDBACK: ✅ Timeframe detected: {timeframe}")
+        
+        # For user feedback, we don't need technical analysis context
+        print(f"🚨 ANALYZE-USER-FEEDBACK: 🧠 Starting user feedback analysis with timeframe: {timeframe}")
+        
+        feedback = analyze_user_drawn_feedback_simple(
+            image_str=image_str,
+            image_format=image_format,
+            timeframe=timeframe
+        )
+        
+        print(f"🚨 ANALYZE-USER-FEEDBACK: ✅ User feedback analysis completed, length: {len(feedback)} chars")
+        
+        return jsonify({
+            "success": True,
+            "feedback": feedback,
+            "detected_timeframe": timeframe,
+            "type": "user_feedback"
+        }), 200
+        
+    except Exception as e:
+        print(f"🚨 ANALYZE-USER-FEEDBACK: ❌ Exception occurred: {str(e)}")
+        import traceback
+        print(f"🚨 ANALYZE-USER-FEEDBACK: ❌ Stack trace: {traceback.format_exc()}")
+        
+        return jsonify({
+            "success": False,
+            "error": f"User feedback analysis failed: {str(e)}"
+        }), 200
+
+# Keep the old endpoint for backward compatibility
+@api_bp.route('/analyze-user-drawn', methods=['POST'])
+def analyze_user_drawn():
+    """
+    Legacy endpoint - kept for backward compatibility
+    """
+    return jsonify({
+        "success": False,
+        "error": "This endpoint is deprecated. Please use /analyze-technical and /analyze-user-feedback instead."
+    }), 200
