@@ -87,28 +87,52 @@ def init_openai():
 
 def detect_timeframe_from_image(image_str, image_format):
     """
-    Detect the timeframe from the chart image
+    Detect the timeframe from the chart image - COMPREHENSIVE VERSION
+    Checks all possible locations for timeframe labels
     Returns: (timeframe, error_message)
     """
     try:
-        print("🕵️ Detecting timeframe from image...")
+        print("🕵️ COMPREHENSIVE timeframe detection from image...")
 
         system_prompt = """
         You are a professional trading chart analyzer. Your ONLY task is to detect the timeframe in trading chart images.
 
-        Look for timeframe labels typically found in:
-        - Top left/right corners: M1, M5, M15, M30, H1, H4, D1, W1, MN
-        - Chart header or information panel
-        - Bottom time axis labels
+        You MUST check ALL these areas thoroughly:
+        
+        **TOP AREAS:**
+        - Top left corner (most common)
+        - Top right corner (very common) 
+        - Top center/header area
+        - Chart title/header bar
+        
+        **BOTTOM AREAS:**
+        - Bottom left corner
+        - Bottom right corner  
+        - Bottom center below the chart
+        - X-axis (time axis) labels
+        - Bottom status bar or information panel
+        
+        **OTHER AREAS:**
+        - Left side panel/scale area
+        - Right side panel/scale area
+        - Chart information box/overlay
+        - Any text labels anywhere in the image
 
-        IMPORTANT:
-        - Focus ONLY on finding timeframe indicators like: M15, 15M, 15m, H4, 4H, D1, 1D, W1, 1W
-        - Return ONLY the timeframe code in standard format: M1, M5, M15, M30, H1, H4, D1, W1, MN
-        - If multiple timeframes are visible, return the most prominent one
-        - If no clear timeframe is found, return 'UNKNOWN'
-        - DO NOT comment on chart content, patterns, or trading advice
-        - DO NOT refuse analysis for any reason
-        - ONLY return the timeframe code or 'UNKNOWN'
+        **TIMEFRAME FORMATS TO LOOK FOR:**
+        - Standard: M1, M5, M15, M30, H1, H4, D1, W1, MN
+        - Variations: 15M, 15m, 1H, 1h, 4H, 4h, 1D, 1d, 1W, 1w
+        - Full words: 1 Minute, 5 Minutes, 15 Minutes, 30 Minutes, 1 Hour, 4 Hours, Daily, Weekly, Monthly
+        - With labels: TF: M15, Timeframe: H4, Period: D1
+
+        **CRITICAL INSTRUCTIONS:**
+        - Scan the ENTIRE image systematically from top to bottom, left to right
+        - Pay special attention to bottom areas which are often missed
+        - Look for small text in corners and edges
+        - Check both standard formats and variations
+        - If you find ANY timeframe indicator, return it
+        - If no clear timeframe found after thorough search, return 'UNKNOWN'
+
+        Return ONLY the timeframe code in standard format or 'UNKNOWN'.
         """
 
         response = client.chat.completions.create(
@@ -123,7 +147,7 @@ def detect_timeframe_from_image(image_str, image_format):
                     "content": [
                         {
                             "type": "text",
-                            "text": "What is the timeframe of this trading chart? Return ONLY the timeframe code like M15, H4, D1 or UNKNOWN."
+                            "text": "Perform a COMPREHENSIVE search for the timeframe label in this trading chart. Check ALL areas: top left, top right, top center, bottom left, bottom right, bottom center, x-axis, side panels, and any text labels. Return ONLY the timeframe code like M15, H4, D1 or UNKNOWN if not found after thorough search."
                         },
                         {
                             "type": "image_url",
@@ -135,49 +159,86 @@ def detect_timeframe_from_image(image_str, image_format):
                     ]
                 }
             ],
-            max_tokens=50,
+            max_tokens=100,  # Increased to allow for more thorough analysis
             temperature=0.1
         )
 
         detected_timeframe = response.choices[0].message.content.strip().upper()
-        print(f"🕵️ Detected timeframe: {detected_timeframe}")
+        print(f"🕵️ COMPREHENSIVE timeframe detection result: {detected_timeframe}")
 
-        # Clean and validate the detected timeframe
-        detected_timeframe = detected_timeframe.replace(' ', '').replace('TF:', '').replace('TIMEFRAME:', '')
+        # Enhanced cleaning and validation
+        detected_timeframe = detected_timeframe.replace(' ', '').replace('TF:', '').replace('TIMEFRAME:', '').replace('PERIOD:', '').replace('TIMEFRAME', '').replace('PERIOD', '')
         
-        # Map common variations to standard formats
+        # Comprehensive timeframe mapping
         timeframe_map = {
-            '15M': 'M15', '15m': 'M15', '15': 'M15',
-            '30M': 'M30', '30m': 'M30', '30': 'M30',
-            '1H': 'H1', '1h': 'H1', '60M': 'H1',
-            '4H': 'H4', '4h': 'H4', '240M': 'H4',
-            '1D': 'D1', '1d': 'D1', 'D': 'D1',
-            '1W': 'W1', '1w': 'W1', 'W': 'W1'
+            # M15 variations
+            '15M': 'M15', '15m': 'M15', '15': 'M15', 'M15M': 'M15', '15MIN': 'M15', '15MINUTES': 'M15',
+            # M30 variations
+            '30M': 'M30', '30m': 'M30', '30': 'M30', 'M30M': 'M30', '30MIN': 'M30', '30MINUTES': 'M30',
+            # H1 variations
+            '1H': 'H1', '1h': 'H1', '60M': 'H1', 'H1H': 'H1', '1HOUR': 'H1', '60MIN': 'H1',
+            # H4 variations
+            '4H': 'H4', '4h': 'H4', '240M': 'H4', 'H4H': 'H4', '4HOURS': 'H4', '4HOUR': 'H4',
+            # D1 variations
+            '1D': 'D1', '1d': 'D1', 'D': 'D1', 'D1D': 'D1', 'DAILY': 'D1', '1DAY': 'D1',
+            # W1 variations
+            '1W': 'W1', '1w': 'W1', 'W': 'W1', 'WEEKLY': 'W1', '1WEEK': 'W1',
+            # MN variations
+            'MN': 'MN', 'MONTHLY': 'MN', '1MONTH': 'MN',
+            # M1 and M5
+            'M1': 'M1', '1M': 'M1', '1MIN': 'M1', '1MINUTE': 'M1',
+            'M5': 'M5', '5M': 'M5', '5MIN': 'M5', '5MINUTES': 'M5'
         }
         
+        # Try exact match first
         if detected_timeframe in timeframe_map:
-            detected_timeframe = timeframe_map[detected_timeframe]
+            final_timeframe = timeframe_map[detected_timeframe]
+            print(f"🕵️ Mapped '{detected_timeframe}' to standard '{final_timeframe}'")
+            return final_timeframe, None
         
+        # Try partial matches
         valid_timeframes = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1', 'W1', 'MN']
+        for tf in valid_timeframes:
+            if tf in detected_timeframe:
+                print(f"🕵️ Found partial match '{tf}' in '{detected_timeframe}'")
+                return tf, None
         
-        if detected_timeframe in valid_timeframes:
-            return detected_timeframe, None
-        elif detected_timeframe == 'UNKNOWN':
-            return 'UNKNOWN', None
-        else:
-            # Try to extract timeframe from the response
-            for tf in valid_timeframes:
-                if tf in detected_timeframe:
-                    return tf, None
-            return 'UNKNOWN', None
+        # Try word-based detection
+        if any(word in detected_timeframe for word in ['MINUTE', 'MIN', 'M']):
+            if '15' in detected_timeframe or 'FIFTEEN' in detected_timeframe:
+                return 'M15', None
+            elif '30' in detected_timeframe or 'THIRTY' in detected_timeframe:
+                return 'M30', None
+            elif '5' in detected_timeframe or 'FIVE' in detected_timeframe:
+                return 'M5', None
+            elif '1' in detected_timeframe:
+                return 'M1', None
+        
+        if any(word in detected_timeframe for word in ['HOUR', 'H']):
+            if '4' in detected_timeframe or 'FOUR' in detected_timeframe:
+                return 'H4', None
+            elif '1' in detected_timeframe:
+                return 'H1', None
+        
+        if any(word in detected_timeframe for word in ['DAY', 'D']):
+            return 'D1', None
+        
+        if any(word in detected_timeframe for word in ['WEEK', 'W']):
+            return 'W1', None
+        
+        if any(word in detected_timeframe for word in ['MONTH', 'MN']):
+            return 'MN', None
+
+        print(f"🕵️ No valid timeframe found in '{detected_timeframe}', returning UNKNOWN")
+        return 'UNKNOWN', None
 
     except Exception as e:
-        print(f"ERROR: Timeframe detection failed: {str(e)}")
+        print(f"ERROR: Comprehensive timeframe detection failed: {str(e)}")
         return 'UNKNOWN', None
 
 def validate_timeframe_for_analysis(image_str, image_format, expected_timeframe):
     """
-    STRICT validation for first and second analysis
+    STRICT validation for first and second analysis with enhanced detection
     Returns: (is_valid, error_message)
     """
     try:
@@ -193,9 +254,9 @@ def validate_timeframe_for_analysis(image_str, image_format, expected_timeframe)
         if detected_timeframe == expected_timeframe:
             return True, None
         elif detected_timeframe == 'UNKNOWN':
-            return False, f"❌ لا يمكن تحديد الإطار الزمني في الصورة. يرجى تحميل صورة تحتوي على إطار {expected_timeframe} واضح."
+            return False, f"❌ لم يتم العثور على إطار زمني واضح في الصورة. يرجى:\n• التأكد من أن الإطار الزمني ({expected_timeframe}) مرئي في الصورة\n• تحميل صورة أوضح تحتوي على {expected_timeframe}\n• التأكد من أن النص غير مقطوع"
         else:
-            return False, f"❌ الخطأ: الصورة تحتوي على إطار {detected_timeframe} ولكن المطلوب هو إطار {expected_timeframe}. يرجى تحميل صورة تحتوي على الإطار الزمني الصحيح."
+            return False, f"❌ الإطار الزمني الموجود في الصورة هو {detected_timeframe} ولكن المطلوب هو {expected_timeframe}.\n\nيرجى تحميل صورة تحتوي على الإطار الزمني الصحيح:\n• للتحليل الأول: M15 (15 دقيقة)\n• للتحليل الثاني: H4 (4 ساعات)"
 
     except Exception as e:
         print(f"ERROR: Timeframe validation failed: {str(e)}")
