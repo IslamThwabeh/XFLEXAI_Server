@@ -163,105 +163,68 @@ def detect_timeframe_from_image(image_str, image_format):
         if detected_timeframe in valid_timeframes:
             return detected_timeframe, None
         elif detected_timeframe == 'UNKNOWN':
-            # Fallback to manual detection for common cases
-            return 'M15', None
+            return 'UNKNOWN', None
         else:
             # Try to extract timeframe from the response
             for tf in valid_timeframes:
                 if tf in detected_timeframe:
                     return tf, None
-            return 'M15', None
+            return 'UNKNOWN', None
 
     except Exception as e:
         print(f"ERROR: Timeframe detection failed: {str(e)}")
-        return 'M15', None
+        return 'UNKNOWN', None
 
-def validate_timeframe_in_image(image_str, image_format, expected_timeframe):
+def validate_timeframe_for_analysis(image_str, image_format, expected_timeframe):
     """
-    Validate that the image contains the expected timeframe label
+    STRICT validation for first and second analysis
     Returns: (is_valid, error_message)
     """
     try:
-        print(f"🕵️ Validating timeframe: expecting '{expected_timeframe}' in image")
+        print(f"🕵️ STRICT VALIDATION: Expecting '{expected_timeframe}'")
 
-        # Create system prompt for timeframe validation
-        system_prompt = f"""
-        You are a precise image validator. Your ONLY task is to check if the chart image contains trading chart elements.
-
-        IMPORTANT:
-        - Look for ANY trading chart elements (candlesticks, price bars, indicators, etc.)
-        - If you see trading chart elements, return 'VALID'
-        - Return 'INVALID' only if the image clearly doesn't contain any trading chart elements
-        - DO NOT refuse validation for minor issues
-        - DO NOT analyze the chart content, trends, or patterns
-        - DO NOT provide any explanation or additional text
-        - ONLY return 'VALID' or 'INVALID'
-        """
-
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "system",
-                    "content": system_prompt
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "Check if this is a valid trading chart image. Return ONLY 'VALID' or 'INVALID'."
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/{image_format};base64,{image_str}",
-                                "detail": "low"
-                            }
-                        }
-                    ]
-                }
-            ],
-            max_tokens=20,
-            temperature=0.1
-        )
-
-        validation_result = response.choices[0].message.content.strip().upper()
-        print(f"🕵️ Timeframe validation result: {validation_result}")
-
-        if validation_result == "VALID":
+        detected_timeframe, detection_error = detect_timeframe_from_image(image_str, image_format)
+        
+        if detection_error:
+            return False, f"❌ لا يمكن تحليل الإطار الزمني للصورة. يرجى التأكد من أن الصورة تحتوي على إطار {expected_timeframe} واضح."
+        
+        print(f"🕵️ Detected: '{detected_timeframe}', Expected: '{expected_timeframe}'")
+        
+        if detected_timeframe == expected_timeframe:
             return True, None
+        elif detected_timeframe == 'UNKNOWN':
+            return False, f"❌ لا يمكن تحديد الإطار الزمني في الصورة. يرجى تحميل صورة تحتوي على إطار {expected_timeframe} واضح."
         else:
-            print(f"🕵️ Timeframe validation failed, but allowing analysis to proceed")
-            return True, None
+            return False, f"❌ الخطأ: الصورة تحتوي على إطار {detected_timeframe} ولكن المطلوب هو إطار {expected_timeframe}. يرجى تحميل صورة تحتوي على الإطار الزمني الصحيح."
 
     except Exception as e:
         print(f"ERROR: Timeframe validation failed: {str(e)}")
-        return True, None
+        return False, f"❌ خطأ في التحقق من الإطار الزمني: {str(e)}"
 
 def analyze_with_openai(image_str, image_format, timeframe=None, previous_analysis=None, user_analysis=None, action_type="chart_analysis"):
     """
     Analyze an image or text using OpenAI with enhanced, detailed analysis.
-    MAX 1024 CHARACTERS FOR SENDPULSE COMPATIBILITY
+    STRICTLY ENFORCES 1024 CHARACTER LIMIT THROUGH PROMPT ENGINEERING
     """
     global client
 
     if not OPENAI_AVAILABLE:
         raise RuntimeError(f"OpenAI not available: {openai_error_message}")
 
-    # Validate timeframe for first and second analysis (when image is provided)
+    # STRICT validation for first and second analysis
     if image_str and action_type in ['first_analysis', 'second_analysis']:
-        is_valid, error_msg = validate_timeframe_in_image(image_str, image_format, timeframe)
+        expected_timeframe = 'M15' if action_type == 'first_analysis' else 'H4'
+        is_valid, error_msg = validate_timeframe_for_analysis(image_str, image_format, expected_timeframe)
         if not is_valid:
             return error_msg
 
-    # ALL ANALYSIS TYPES LIMITED TO 1024 CHARACTERS FOR SENDPULSE
+    # ALL ANALYSIS TYPES STRICTLY LIMITED TO 1024 CHARACTERS
     char_limit = 1024
-    max_tokens = 350  # Adjusted for 1024 character limit
+    max_tokens = 300  # Conservative limit to ensure 1024 characters
 
     if action_type == "user_analysis_feedback":
         analysis_prompt = f"""
-أنت خبير تحليل فني صارم وصادق. قم بتقييم تحليل المستخدم التالي بصدق وموضوعية:
+أنت خبير تحليل فني صارم وصادق. قم بتقييم تحليل المستخدم التالي بصدق وموضوعية.
 
 تحليل المستخدم:
 {user_analysis}
@@ -273,145 +236,115 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 4. ركز على الأخطاء الجسيمة في التفكير التحليلي
 5. قدم نقدًا بناءً مع حلول عملية
 
-**هيكل التقييم:**
-### 📊 تقييم موضوعي:
-**الدقة الفنية:** (مدى توافق التحليل مع المبادئ الفنية)
-**المنطق التحليلي:** (قوة الاستدلال والربط بين المفاهيم)
-**الأخطاء الرئيسية:** (حدد الأخطاء بوضوح)
+**مهمتك:**
+- قدم تقييماً موضوعياً في حدود 1000 حرف فقط
+- لا تتجاوز 1024 حرف تحت أي ظرف
+- كن مباشراً وواضحاً
+- ركز على النقاط الأساسية
 
-### 🎯 نقاط تحتاج تحسين:
-1. (النقاط الأساسية التي تحتاج تصحيح)
-2. (كن محددًا وواضحًا)
-
-### 💡 توصيات عملية:
-(قدم 2-3 توصيات قابلة للتطبيق لتحسين التحليل)
-
-**كن محترفًا وصادقًا - الهدف هو المساعدة في التحسن، ليس المجاملة.**
-**التزم بعدم تجاوز {char_limit} حرف.**
+**التزم الصرامة بعدم تجاوز 1024 حرف. اكتب ردك ثم تأكد من عد الأحرف.**
 """
 
     elif action_type == "single_analysis":
         analysis_prompt = f"""
-أنت محلل فني محترف متخصص في تحليل العملات باستخدام مفاهيم المال الذكي (Smart Money Concepts). قدم تحليلاً شاملاً ومفصلاً للرسم البياني.
+أنت محلل فني محترف متخصص في تحليل العملات باستخدام مفاهيم المال الذكي. قدم تحليلاً شاملاً للرسم البياني.
 
-**المطلوب تحليل كامل متقدم يتضمن:**
+**المطلوب تحليل كامل يتضمن:**
 
 ### 📊 التحليل الفني لشارت {timeframe}
-
 **🎯 مفاهيم المال الذكي (SMC):**
 - تحليل مناطق السيولة (Liquidity)
 - تحديد أوامر التجميع (Order Blocks)
-- تحليل مناطق العرض والطلب (Supply/Demand)
 
 **📊 مستويات فيبوناتشي:**
-- تحديد مستويات فيبوناتشي الرئيسية (38.2%, 50%, 61.8%)
-- تحليل تفاعل السعر مع هذه المستويات
+- تحديد المستويات الرئيسية (38.2%, 50%, 61.8%)
+- تحليل تفاعل السعر
 
 **🛡️ الدعم والمقاومة:**
-- المستويات الرئيسية للدعم والمقاومة
-- المناطق الحرجة للكسر أو الارتداد
+- المستويات الرئيسية
+- المناطق الحرجة
 
-**⚡ التوصيات الفورية (خلال 5-15 دقيقة):**
-- نقاط الدخول القريبة الحالية
-- وقف الخسائر المثالي بناءً على السيولة
-- أهداف جني الأرباح القريبة
-- إدارة المخاطرة الفورية
+**⚡ التوصيات الفورية (5-15 دقيقة):**
+- نقاط الدخول القريبة
+- وقف الخسائر المناسب
+- أهداف جني الأرباح
 
-**التزم بتقديم تحليل عملي ومفيد مع التركيز على الفرص القريبة خلال الـ5-15 دقيقة القادمة. التزم بعدم تجاوز {char_limit} حرف.**
+**تعليمات صارمة:**
+- التزم بـ 1000 حرف كحد أقصى
+- لا تتجاوز 1024 حرف بأي حال
+- ركز على التوصيات العملية الفورية
+- كن مباشراً وواضحاً
+
+**اكتب تحليلاً مختصراً وفعالاً ضمن الحد المسموح. تأكد من عدد الأحرف.**
 """
 
     elif timeframe == "H4" and previous_analysis:
         analysis_prompt = f"""
-أنت محلل فني محترف متخصص في تحليل العملات. قدم تحليلاً شاملاً ومفصلاً يجمع بين الإطارين الزمنيين.
+أنت محلل فني محترف. قدم تحليلاً شاملاً يجمع بين الإطارين الزمنيين.
 
 التحليل السابق (15 دقيقة): {previous_analysis}
 
 **المطلوب تحليل شامل يتضمن:**
 
 ### 📊 التحليل الفني الشامل
-**1. تحليل فيبوناتشي:**
-- تحديد مستويات فيبوناتشي الرئيسية
-- تفاعل السعر مع هذه المستويات
+**1. تحليل فيبوناتشي الرئيسية**
+**2. الدعم والمقاومة الحرجة**  
+**3. تحليل السيولة**
+**4. التوصيات العملية**
 
-**2. الدعم والمقاومة:**
-- المستويات الرئيسية للدعم والمقاومة
-- المناطق الحرجة التي يجب مراقبتها
+**تعليمات صارمة:**
+- التزم بـ 1000 حرف كحد أقصى
+- لا تتجاوز 1024 حرف بأي حال
+- ركز على الدمج بين الإطارين
+- قدم توصيات عملية مباشرة
 
-**3. تحليل السيولة:**
-- مناطق السيولة المحتملة
-- مناطق وقف الخسائر المتوقعة
-
-**4. التوصيات العملية:**
-- سعر الدخول المناسب
-- نقاط وقف الخسائر وجني الأرباح
-- إدارة المخاطرة
-
-**التزم بعدم تجاوز {char_limit} حرف مع تقديم تحليل عملي ومفيد.**
+**اكتب تحليلاً مختصراً ضمن الحد المسموح. تأكد من عدد الأحرف.**
 """
 
     elif action_type == "final_analysis":
         analysis_prompt = f"""
-أنت خبير تحليل فني محترف. قم بتحليل شامل ومتكامل بناءً على التحليلين السابقين:
+أنت خبير تحليل فني محترف. قم بتحليل شامل بناءً على التحليلين السابقين.
 
 التحليل الأول (M15): {previous_analysis}
 
 **المطلوب تحليل نهائي متكامل يتضمن:**
 
-### 📈 التحليل الشامل متعدد الأطر الزمنية
+### 📈 التحليل الشامل
+**🎯 الاتجاه العام وهيكل السوق**
+**📊 مستويات فيبوناتشي الحرجة**
+**🛡️ الدعم والمقاومة الرئيسية**
+**💼 التوصيات الاستراتيجية**
 
-**🎯 الاتجاه العام وهيكل السوق:**
-- تحديد الاتجاه الرئيسي والثانوي
-- تحليل هيكل السوق من القمم والقيعان
+**تعليمات صارمة:**
+- التزم بـ 1000 حرف كحد أقصى
+- لا تتجاوز 1024 حرف بأي حال
+- ركز على التوصيات العملية
+- كن مباشراً وواضحاً
 
-**📊 مستويات فيبوناتشي الحرجة:**
-- مستويات التصحيح الرئيسية (38.2%, 50%, 61.8%)
-- تفاعل السعر مع مستويات فيبوناتشي
-
-**🛡️ الدعم والمقاومة الرئيسية:**
-- المستويات القوية للدعم والمقاومة
-- المناطق الحرجة للكسر أو الارتداد
-
-**💼 التوصيات الاستراتيجية:**
-- سعر الدخول المثالي
-- وقف الخسائر المناسب
-- أهداف جني الأرباح
-- إدارة المخاطرة
-
-**التزم بتقديم تحليل عملي ومفيد لا يتجاوز {char_limit} حرف.**
+**اكتب تحليلاً مختصراً وفعالاً ضمن الحد المسموح. تأكد من عدد الأحرف.**
 """
 
     else:
         # First analysis with detailed prompt
         analysis_prompt = f"""
-أنت محلل فني محترف متخصص في تحليل العملات. قدم تحليلاً شاملاً ومفصلاً للرسم البياني.
+أنت محلل فني محترف متخصص في تحليل العملات. قدم تحليلاً شاملاً للرسم البياني.
 
 **المطلوب تحليل كامل يتضمن:**
 
 ### 📊 التحليل الفني لشارت {timeframe}
+**🎯 الاتجاه العام وهيكل السوق**
+**📊 مستويات فيبوناتشي الرئيسية**
+**🛡️ الدعم والمقاومة الحرجة**
+**💧 تحليل السيولة**
+**⚡ التوصيات العملية الفورية**
 
-**🎯 الاتجاه العام وهيكل السوق:**
-- تحديد الاتجاه الرئيسي والثانوي
-- تحليل هيكل السوق من القمم والقيعان
+**تعليمات صارمة:**
+- التزم بـ 1000 حرف كحد أقصى
+- لا تتجاوز 1024 حرف بأي حال
+- ركز على التوصيات خلال 5-15 دقيقة
+- كن مباشراً وواضحاً
 
-**📊 مستويات فيبوناتشي:**
-- تحديد مستويات فيبوناتشي الرئيسية
-- تحليل تفاعل السعر مع هذه المستويات
-
-**🛡️ الدعم والمقاومة:**
-- المستويات الرئيسية للدعم والمقاومة
-- المناطق الحرجة للكسر أو الارتداد
-
-**💧 تحليل السيولة:**
-- مناطق السيولة المحتملة
-- مناطق وقف الخسائر المتوقعة
-
-**⚡ التوصيات العملية:**
-- سعر الدخول المناسب (خلال 5-15 دقيقة)
-- وقف الخسائر المثالي
-- أهداف جني الأرباح
-- نصائح إدارة المخاطرة
-
-**التزم بتقديم تحليل عملي ومفيد لا يتجاوز {char_limit} حرف.**
+**اكتب تحليلاً مختصراً وفعالاً ضمن الحد المسموح. تأكد من عدد الأحرف قبل الإرسال.**
 """
 
     if not client:
@@ -426,7 +359,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
             response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
-                    {"role": "system", "content": f"أنت محلل فني محترف. التزم بعدم تجاوز {char_limit} حرف في ردك."},
+                    {"role": "system", "content": f"أنت محلل فني محترف. التزم بعدم تجاوز {char_limit} حرف في ردك. اكتب ثم عد الأحرف للتأكد."},
                     {"role": "user", "content": [
                         {"type": "text", "text": analysis_prompt},
                         {"type": "image_url", "image_url": {"url": f"data:image/{image_format.lower()};base64,{image_str}", "detail": "low"}}
@@ -441,7 +374,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
             response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
-                    {"role": "system", "content": f"أنت محلل فني محترف. التزم بعدم تجاوز {char_limit} حرف في ردك."},
+                    {"role": "system", "content": f"أنت محلل فني محترف. التزم بعدم تجاوز {char_limit} حرف في ردك. اكتب ثم عد الأحرف للتأكد."},
                     {"role": "user", "content": analysis_prompt}
                 ],
                 max_tokens=max_tokens,
@@ -453,10 +386,9 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
         processing_time = time.time() - start_time
         print(f"🚨 OPENAI ANALYSIS: ✅ Analysis completed in {processing_time:.2f}s, length: {len(analysis)} chars")
 
-        # Ensure analysis doesn't exceed 1024 characters for SendPulse
+        # NO TRIMMING - We rely on prompt engineering to enforce limits
         if len(analysis) > char_limit:
-            print(f"🚨 OPENAI ANALYSIS: Analysis too long ({len(analysis)}), trimming to {char_limit} chars")
-            analysis = analysis[:char_limit]
+            print(f"🚨 OPENAI ANALYSIS: ⚠️ Analysis exceeded limit ({len(analysis)} chars), but keeping original response")
 
         return analysis
 
@@ -487,8 +419,7 @@ def load_image_from_url(image_url):
 def analyze_technical_chart(image_str, image_format, timeframe=None):
     """
     Analyze the technical chart only (first call)
-    Returns: technical analysis string
-    MAX 1024 CHARACTERS FOR SENDPULSE COMPATIBILITY
+    STRICTLY ENFORCES 1024 CHARACTER LIMIT
     """
     global client
 
@@ -496,10 +427,10 @@ def analyze_technical_chart(image_str, image_format, timeframe=None):
         raise RuntimeError(f"OpenAI not available: {openai_error_message}")
 
     char_limit = 1024
-    max_tokens = 350
+    max_tokens = 300
     
     analysis_prompt = f"""
-أنت خبير تحليل فني للمخططات المالية. قم بتحليل الرسم البياني التالي من الناحية الفنية فقط.
+أنت خبير تحليل فني للمخططات المالية. قم بتحليل الرسم البياني من الناحية الفنية فقط.
 
 **المطلوب تحليل فني كامل يتضمن:**
 
@@ -508,16 +439,15 @@ def analyze_technical_chart(image_str, image_format, timeframe=None):
 **📊 مستويات فيبوناتشي الرئيسية**
 **🛡️ الدعم والمقاومة الحرجة**
 **💧 تحليل السيولة**
-**⚠️ المخاطر والتنبيهات**
 **💼 التوصيات العملية**
 
-**التزم بالتالي:**
+**تعليمات صارمة:**
 - ركز فقط على التحليل الفني للمخطط
-- قدم تحليلاً عملياً ومفيداً للمتداولين
-- اكتب بلغة عربية واضحة ومحترفة
-- التزم بعدم تجاوز {char_limit} حرف
+- التزم بـ 1000 حرف كحد أقصى
+- لا تتجاوز 1024 حرف بأي حال
+- كن مباشراً وواضحاً
 
-**ملاحظة:** هذا تحليل لمخطط تداول مالي وليس صورة لأشخاص.
+**اكتب تحليلاً مختصراً وفعالاً ضمن الحد المسموح. تأكد من عدد الأحرف.**
 """
 
     if not client:
@@ -528,7 +458,7 @@ def analyze_technical_chart(image_str, image_format, timeframe=None):
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": "أنت خبير تحليل فني للمخططات المالية. ركز فقط على التحليل الفني."},
+                {"role": "system", "content": "أنت خبير تحليل فني. ركز فقط على التحليل الفني. التزم بعدم تجاوز 1024 حرف."},
                 {"role": "user", "content": [
                     {"type": "text", "text": analysis_prompt},
                     {"type": "image_url", "image_url": {"url": f"data:image/{image_format.lower()};base64,{image_str}", "detail": "low"}}
@@ -542,10 +472,9 @@ def analyze_technical_chart(image_str, image_format, timeframe=None):
         analysis = response.choices[0].message.content.strip()
         print(f"🚨 OPENAI ANALYSIS: ✅ Technical analysis completed, length: {len(analysis)} chars")
         
-        # Ensure analysis doesn't exceed 1024 characters for SendPulse
+        # NO TRIMMING - We rely on prompt engineering
         if len(analysis) > char_limit:
-            print(f"🚨 OPENAI ANALYSIS: Analysis too long ({len(analysis)}), trimming to {char_limit} chars")
-            analysis = analysis[:char_limit]
+            print(f"🚨 OPENAI ANALYSIS: ⚠️ Technical analysis exceeded limit ({len(analysis)} chars), but keeping original response")
             
         return analysis
 
@@ -556,8 +485,7 @@ def analyze_technical_chart(image_str, image_format, timeframe=None):
 def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
     """
     Simple version for user feedback analysis without technical analysis context
-    Returns: feedback string
-    MAX 1024 CHARACTERS FOR SENDPULSE COMPATIBILITY
+    STRICTLY ENFORCES 1024 CHARACTER LIMIT
     """
     global client
 
@@ -565,38 +493,26 @@ def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
         raise RuntimeError(f"OpenAI not available: {openai_error_message}")
 
     char_limit = 1024
-    max_tokens = 350
+    max_tokens = 300
     
     feedback_prompt = f"""
 أنت خبير تحليل فني ومدرس محترف. قم بتقييم التحليل المرسوم من قبل المستخدم على الرسم البياني.
 
-**مهمتك: تقييم الرسومات والتحليلات المرسومة من قبل المستخدم:**
+**مهمتك: تقييم الرسومات والتحليلات المرسومة:**
 
-1. **تقييم الخطوط المرسومة:**
-   - خطوط الاتجاه: هل هي مرسومة بشكل صحيح؟
-   - خطوط الدعم والمقاومة: هل في الأماكن المناسبة؟
-   - مستويات فيبوناتشي: هل التطبيق صحيح؟
+1. **تقييم الخطوط المرسومة:** (الاتجاه، الدعم/المقاومة، فيبوناتشي)
+2. **تقييم الأشكال والعلامات:** (الدوائر، الأسهم، الإشارات)
+3. **نقاط القوة:** (الجوانب الإيجابية)
+4. **نقاط الضعف:** (الأخطاء والتحسينات)
+5. **توصيات للتحسين:** (نصائح عملية)
 
-2. **تقييم الأشكال والعلامات:**
-   - الدوائر والإشارات: هل في الأماكن الصحيحة؟
-   - الأسهم والاتجاهات: هل توضح الحركة بشكل صحيح؟
-
-3. **نقاط القوة:**
-   - اذكر الجوانب الإيجابية في التحليل المرسوم
-
-4. **نقاط الضعف:**
-   - اذكر الأخطاء والتحسينات المطلوبة
-
-5. **توصيات للتحسين:**
-   - قدم نصائح عملية لتحسين التحليل المرسوم
-
-**التزم بالتالي:**
+**تعليمات صارمة:**
 - كن صادقاً وموضوعياً في التقييم
 - قدم نقداً بناءً يهدف لمساعدة المستخدم
-- ركز على الدقة الفنية للرسومات
-- التزم بعدم تجاوز {char_limit} حرف
+- التزم بـ 1000 حرف كحد أقصى
+- لا تتجاوز 1024 حرف بأي حال
 
-**ملاحظة:** هذا تحليل لمخطط تداول مالي وليس صورة لأشخاص.
+**اكتب تقييماً مختصراً ضمن الحد المسموح. تأكد من عدد الأحرف.**
 """
 
     if not client:
@@ -607,7 +523,7 @@ def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": "أنت مدرس تحليل فني محترف. قيم تحليل المستخدم المرسوم بموضوعية."},
+                {"role": "system", "content": "أنت مدرس تحليل فني محترف. قيم تحليل المستخدم المرسوم بموضوعية. التزم بعدم تجاوز 1024 حرف."},
                 {"role": "user", "content": [
                     {"type": "text", "text": feedback_prompt},
                     {"type": "image_url", "image_url": {"url": f"data:image/{image_format.lower()};base64,{image_str}", "detail": "low"}}
@@ -621,10 +537,9 @@ def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
         feedback = response.choices[0].message.content.strip()
         print(f"🚨 OPENAI ANALYSIS: ✅ Simple user feedback analysis completed, length: {len(feedback)} chars")
         
-        # Ensure feedback doesn't exceed 1024 characters for SendPulse
+        # NO TRIMMING - We rely on prompt engineering
         if len(feedback) > char_limit:
-            print(f"🚨 OPENAI ANALYSIS: Feedback too long ({len(feedback)}), trimming to {char_limit} chars")
-            feedback = feedback[:char_limit]
+            print(f"🚨 OPENAI ANALYSIS: ⚠️ Feedback exceeded limit ({len(feedback)} chars), but keeping original response")
             
         return feedback
 
