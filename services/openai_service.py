@@ -87,12 +87,12 @@ def init_openai():
 
 def detect_timeframe_from_image(image_str, image_format):
     """
-    Detect the timeframe from the chart image - COMPREHENSIVE VERSION
-    Checks all possible locations for timeframe labels
+    Detect the timeframe from the chart image - IMPROVED VERSION
+    Better logic to prevent M15 being misclassified as M1
     Returns: (timeframe, error_message)
     """
     try:
-        print("🕵️ COMPREHENSIVE timeframe detection from image...")
+        print("🕵️ IMPROVED timeframe detection from image...")
 
         system_prompt = """
         You are a professional trading chart analyzer. Your ONLY task is to detect the timeframe in trading chart images.
@@ -159,81 +159,105 @@ def detect_timeframe_from_image(image_str, image_format):
                     ]
                 }
             ],
-            max_tokens=100,  # Increased to allow for more thorough analysis
+            max_tokens=100,
             temperature=0.1
         )
 
         detected_timeframe = response.choices[0].message.content.strip().upper()
-        print(f"🕵️ COMPREHENSIVE timeframe detection result: {detected_timeframe}")
+        print(f"🕵️ RAW timeframe detection result: '{detected_timeframe}'")
 
         # Enhanced cleaning and validation
-        detected_timeframe = detected_timeframe.replace(' ', '').replace('TF:', '').replace('TIMEFRAME:', '').replace('PERIOD:', '').replace('TIMEFRAME', '').replace('PERIOD', '')
+        cleaned_timeframe = detected_timeframe.replace(' ', '').replace('TF:', '').replace('TIMEFRAME:', '').replace('PERIOD:', '').replace('TIMEFRAME', '').replace('PERIOD', '')
+        print(f"🕵️ Cleaned timeframe: '{cleaned_timeframe}'")
         
-        # Comprehensive timeframe mapping
+        # Comprehensive timeframe mapping - ORDER MATTERS! Check longer strings first
         timeframe_map = {
-            # M15 variations
-            '15M': 'M15', '15m': 'M15', '15': 'M15', 'M15M': 'M15', '15MIN': 'M15', '15MINUTES': 'M15',
+            # M15 variations - CHECK THESE FIRST to prevent M1 false positives
+            '15MINUTES': 'M15', '15MINUTE': 'M15', '15MIN': 'M15', '15M': 'M15', '15m': 'M15', 'M15M': 'M15',
             # M30 variations
-            '30M': 'M30', '30m': 'M30', '30': 'M30', 'M30M': 'M30', '30MIN': 'M30', '30MINUTES': 'M30',
-            # H1 variations
-            '1H': 'H1', '1h': 'H1', '60M': 'H1', 'H1H': 'H1', '1HOUR': 'H1', '60MIN': 'H1',
+            '30MINUTES': 'M30', '30MINUTE': 'M30', '30MIN': 'M30', '30M': 'M30', '30m': 'M30', 'M30M': 'M30',
             # H4 variations
-            '4H': 'H4', '4h': 'H4', '240M': 'H4', 'H4H': 'H4', '4HOURS': 'H4', '4HOUR': 'H4',
+            '4HOURS': 'H4', '4HOUR': 'H4', '4H': 'H4', '4h': 'H4', 'H4H': 'H4', '240M': 'H4',
+            # H1 variations
+            '1HOUR': 'H1', '1H': 'H1', '1h': 'H1', 'H1H': 'H1', '60M': 'H1', '60MIN': 'H1',
             # D1 variations
-            '1D': 'D1', '1d': 'D1', 'D': 'D1', 'D1D': 'D1', 'DAILY': 'D1', '1DAY': 'D1',
+            'DAILY': 'D1', '1DAY': 'D1', '1D': 'D1', '1d': 'D1', 'D1D': 'D1',
             # W1 variations
-            '1W': 'W1', '1w': 'W1', 'W': 'W1', 'WEEKLY': 'W1', '1WEEK': 'W1',
+            'WEEKLY': 'W1', '1WEEK': 'W1', '1W': 'W1', '1w': 'W1',
             # MN variations
-            'MN': 'MN', 'MONTHLY': 'MN', '1MONTH': 'MN',
-            # M1 and M5
-            'M1': 'M1', '1M': 'M1', '1MIN': 'M1', '1MINUTE': 'M1',
-            'M5': 'M5', '5M': 'M5', '5MIN': 'M5', '5MINUTES': 'M5'
+            'MONTHLY': 'MN', '1MONTH': 'MN', 'MN': 'MN',
+            # M5 variations
+            '5MINUTES': 'M5', '5MINUTE': 'M5', '5MIN': 'M5', '5M': 'M5', '5m': 'M5', 'M5M': 'M5',
+            # M1 variations - CHECK THESE LAST to prevent false positives
+            '1MINUTE': 'M1', '1MIN': 'M1', '1M': 'M1', '1m': 'M1', 'M1M': 'M1'
         }
         
-        # Try exact match first
-        if detected_timeframe in timeframe_map:
-            final_timeframe = timeframe_map[detected_timeframe]
-            print(f"🕵️ Mapped '{detected_timeframe}' to standard '{final_timeframe}'")
-            return final_timeframe, None
+        # Try exact match first - check in order of priority
+        for timeframe_variant, standard_tf in timeframe_map.items():
+            if cleaned_timeframe == timeframe_variant:
+                print(f"🕵️ Exact match: '{cleaned_timeframe}' -> '{standard_tf}'")
+                return standard_tf, None
         
-        # Try partial matches
-        valid_timeframes = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1', 'W1', 'MN']
-        for tf in valid_timeframes:
-            if tf in detected_timeframe:
-                print(f"🕵️ Found partial match '{tf}' in '{detected_timeframe}'")
+        # Try partial matches with priority (longer timeframes first)
+        priority_timeframes = ['M15', 'M30', 'H4', 'H1', 'D1', 'W1', 'MN', 'M5', 'M1']
+        
+        for tf in priority_timeframes:
+            if tf in cleaned_timeframe:
+                print(f"🕵️ Partial match: found '{tf}' in '{cleaned_timeframe}'")
                 return tf, None
         
-        # Try word-based detection
-        if any(word in detected_timeframe for word in ['MINUTE', 'MIN', 'M']):
-            if '15' in detected_timeframe or 'FIFTEEN' in detected_timeframe:
-                return 'M15', None
-            elif '30' in detected_timeframe or 'THIRTY' in detected_timeframe:
-                return 'M30', None
-            elif '5' in detected_timeframe or 'FIVE' in detected_timeframe:
-                return 'M5', None
-            elif '1' in detected_timeframe:
+        # Special case: if we see "15" anywhere, prioritize M15
+        if '15' in cleaned_timeframe and any(word in cleaned_timeframe for word in ['M', 'MIN', 'MINUTE']):
+            print(f"🕵️ Special case: '15' found in '{cleaned_timeframe}', returning M15")
+            return 'M15', None
+        
+        # Special case: if we see "1" but it's likely part of "15", be careful
+        if '1' in cleaned_timeframe and '15' not in cleaned_timeframe and any(word in cleaned_timeframe for word in ['M', 'MIN', 'MINUTE']):
+            # Only return M1 if we're sure it's not M15
+            if cleaned_timeframe in ['1M', '1MIN', '1MINUTE', 'M1']:
+                print(f"🕵️ Confident M1 detection: '{cleaned_timeframe}'")
                 return 'M1', None
         
-        if any(word in detected_timeframe for word in ['HOUR', 'H']):
-            if '4' in detected_timeframe or 'FOUR' in detected_timeframe:
+        # Try word-based detection with M15 priority
+        if any(word in cleaned_timeframe for word in ['MINUTE', 'MIN', 'M']):
+            if '15' in cleaned_timeframe or 'FIFTEEN' in cleaned_timeframe:
+                print(f"🕵️ Word-based: M15 detected from '{cleaned_timeframe}'")
+                return 'M15', None
+            elif '30' in cleaned_timeframe or 'THIRTY' in cleaned_timeframe:
+                print(f"🕵️ Word-based: M30 detected from '{cleaned_timeframe}'")
+                return 'M30', None
+            elif '5' in cleaned_timeframe or 'FIVE' in cleaned_timeframe:
+                print(f"🕵️ Word-based: M5 detected from '{cleaned_timeframe}'")
+                return 'M5', None
+            elif '1' in cleaned_timeframe and '15' not in cleaned_timeframe:
+                print(f"🕵️ Word-based: M1 detected from '{cleaned_timeframe}'")
+                return 'M1', None
+        
+        if any(word in cleaned_timeframe for word in ['HOUR', 'H']):
+            if '4' in cleaned_timeframe or 'FOUR' in cleaned_timeframe:
+                print(f"🕵️ Word-based: H4 detected from '{cleaned_timeframe}'")
                 return 'H4', None
-            elif '1' in detected_timeframe:
+            elif '1' in cleaned_timeframe:
+                print(f"🕵️ Word-based: H1 detected from '{cleaned_timeframe}'")
                 return 'H1', None
         
-        if any(word in detected_timeframe for word in ['DAY', 'D']):
+        if any(word in cleaned_timeframe for word in ['DAY', 'D']):
+            print(f"🕵️ Word-based: D1 detected from '{cleaned_timeframe}'")
             return 'D1', None
         
-        if any(word in detected_timeframe for word in ['WEEK', 'W']):
+        if any(word in cleaned_timeframe for word in ['WEEK', 'W']):
+            print(f"🕵️ Word-based: W1 detected from '{cleaned_timeframe}'")
             return 'W1', None
         
-        if any(word in detected_timeframe for word in ['MONTH', 'MN']):
+        if any(word in cleaned_timeframe for word in ['MONTH', 'MN']):
+            print(f"🕵️ Word-based: MN detected from '{cleaned_timeframe}'")
             return 'MN', None
 
-        print(f"🕵️ No valid timeframe found in '{detected_timeframe}', returning UNKNOWN")
+        print(f"🕵️ No valid timeframe found in '{cleaned_timeframe}', returning UNKNOWN")
         return 'UNKNOWN', None
 
     except Exception as e:
-        print(f"ERROR: Comprehensive timeframe detection failed: {str(e)}")
+        print(f"ERROR: Improved timeframe detection failed: {str(e)}")
         return 'UNKNOWN', None
 
 def validate_timeframe_for_analysis(image_str, image_format, expected_timeframe):
@@ -249,13 +273,16 @@ def validate_timeframe_for_analysis(image_str, image_format, expected_timeframe)
         if detection_error:
             return False, f"❌ لا يمكن تحليل الإطار الزمني للصورة. يرجى التأكد من أن الصورة تحتوي على إطار {expected_timeframe} واضح."
         
-        print(f"🕵️ Detected: '{detected_timeframe}', Expected: '{expected_timeframe}'")
+        print(f"🕵️ Validation Result: Detected '{detected_timeframe}', Expected '{expected_timeframe}'")
         
         if detected_timeframe == expected_timeframe:
+            print(f"🕵️ ✅ Validation PASSED")
             return True, None
         elif detected_timeframe == 'UNKNOWN':
+            print(f"🕵️ ❌ Validation FAILED - No timeframe detected")
             return False, f"❌ لم يتم العثور على إطار زمني واضح في الصورة. يرجى:\n• التأكد من أن الإطار الزمني ({expected_timeframe}) مرئي في الصورة\n• تحميل صورة أوضح تحتوي على {expected_timeframe}\n• التأكد من أن النص غير مقطوع"
         else:
+            print(f"🕵️ ❌ Validation FAILED - Wrong timeframe")
             return False, f"❌ الإطار الزمني الموجود في الصورة هو {detected_timeframe} ولكن المطلوب هو {expected_timeframe}.\n\nيرجى تحميل صورة تحتوي على الإطار الزمني الصحيح:\n• للتحليل الأول: M15 (15 دقيقة)\n• للتحليل الثاني: H4 (4 ساعات)"
 
     except Exception as e:
@@ -349,7 +376,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 
 ### 📊 التحليل الفني الشامل
 **1. تحليل فيبوناتشي الرئيسية**
-**2. الدعم والمقاومة الحرجة**  
+**2. الدعم والمقاومة الحرجة**
 **3. تحليل السيولة**
 **4. التوصيات العملية**
 
@@ -489,7 +516,7 @@ def analyze_technical_chart(image_str, image_format, timeframe=None):
 
     char_limit = 1024
     max_tokens = 300
-    
+
     analysis_prompt = f"""
 أنت خبير تحليل فني للمخططات المالية. قم بتحليل الرسم البياني من الناحية الفنية فقط.
 
@@ -532,11 +559,11 @@ def analyze_technical_chart(image_str, image_format, timeframe=None):
 
         analysis = response.choices[0].message.content.strip()
         print(f"🚨 OPENAI ANALYSIS: ✅ Technical analysis completed, length: {len(analysis)} chars")
-        
+
         # NO TRIMMING - We rely on prompt engineering
         if len(analysis) > char_limit:
             print(f"🚨 OPENAI ANALYSIS: ⚠️ Technical analysis exceeded limit ({len(analysis)} chars), but keeping original response")
-            
+
         return analysis
 
     except Exception as e:
@@ -555,7 +582,7 @@ def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
 
     char_limit = 1024
     max_tokens = 300
-    
+
     feedback_prompt = f"""
 أنت خبير تحليل فني ومدرس محترف. قم بتقييم التحليل المرسوم من قبل المستخدم على الرسم البياني.
 
@@ -597,11 +624,11 @@ def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
 
         feedback = response.choices[0].message.content.strip()
         print(f"🚨 OPENAI ANALYSIS: ✅ Simple user feedback analysis completed, length: {len(feedback)} chars")
-        
+
         # NO TRIMMING - We rely on prompt engineering
         if len(feedback) > char_limit:
             print(f"🚨 OPENAI ANALYSIS: ⚠️ Feedback exceeded limit ({len(feedback)} chars), but keeping original response")
-            
+
         return feedback
 
     except Exception as e:
