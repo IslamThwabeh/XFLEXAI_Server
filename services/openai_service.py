@@ -69,7 +69,7 @@ def init_openai():
                 openai_error_message = "Invalid API key. Please check your OPENAI_API_KEY environment variable."
             elif "rate limit" in error_msg.lower():
                 openai_error_message = "Rate limit exceeded. Please try again later."
-[O            else:
+            else:
                 openai_error_message = f"OpenAI API test failed: {error_msg}"
             OPENAI_AVAILABLE = False
             return False
