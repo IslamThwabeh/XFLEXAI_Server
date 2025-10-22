@@ -46,6 +46,7 @@ def analyze():
     """
     SIMPLIFIED ANALYSIS ENDPOINT - handles all analysis types
     Action types: first_analysis, second_analysis, user_analysis, new_session
+    ALL RESPONSES LIMITED TO 1024 CHARACTERS FOR SENDPULSE
     """
     try:
         # LOG INCOMING REQUEST
@@ -169,7 +170,6 @@ def analyze():
                     "message": "صورة غير صالحة"
                 }
                 print(f"🚨 ANALYZE ENDPOINT: ❌ Returning error - Invalid image: {error_response}")
-                # Return 200 instead of 400 for SendPulse compatibility
                 return jsonify(error_response), 200
 
             print(f"🚨 ANALYZE ENDPOINT: 🧠 Starting first analysis with timeframe: {timeframe}")
@@ -184,7 +184,6 @@ def analyze():
                     "expected_timeframe": "M15"
                 }
                 print(f"🚨 ANALYZE ENDPOINT: ⚠️ Timeframe validation failed (returning 200): {analysis}")
-                # Return 200 instead of 400 for SendPulse compatibility
                 return jsonify(error_response), 200
 
             session_data['first_analysis'] = analysis
@@ -210,7 +209,6 @@ def analyze():
                     "message": "صورة غير صالحة"
                 }
                 print(f"🚨 ANALYZE ENDPOINT: ❌ Returning error - Invalid image: {error_response}")
-                # Return 200 instead of 400 for SendPulse compatibility
                 return jsonify(error_response), 200
 
             if session_data['status'] != 'first_done':
@@ -219,7 +217,6 @@ def analyze():
                     "message": "يجب تحليل الإطار الأول قبل الثاني"
                 }
                 print(f"🚨 ANALYZE ENDPOINT: ❌ Returning error - First analysis not done: {error_response}")
-                # Return 200 instead of 400 for SendPulse compatibility
                 return jsonify(error_response), 200
 
             # Use H4 for second analysis
@@ -236,7 +233,6 @@ def analyze():
                     "expected_timeframe": "H4"
                 }
                 print(f"🚨 ANALYZE ENDPOINT: ⚠️ Timeframe validation failed (returning 200): {analysis}")
-                # Return 200 instead of 400 for SendPulse compatibility
                 return jsonify(error_response), 200
 
             session_data['second_analysis'] = analysis
@@ -357,12 +353,12 @@ def clear_sessions():
         "status": "sessions_cleared"
     })
 
-# Single image analysis endpoint (keep as is)
 @api_bp.route('/analyze-single', methods=['POST'])
 def analyze_single_image():
     """
-    Analyze a single image - automatically detect timeframe and provide detailed analysis
-    Returns 200 always with success/failure in response body
+    Analyze a single image - automatically detect timeframe and provide enhanced analysis
+    Enhanced with SMC concepts and immediate recommendations
+    MAX 1024 CHARACTERS FOR SENDPULSE COMPATIBILITY
     """
     try:
         print(f"🚨 ANALYZE-SINGLE: 📥 Received request at {datetime.now()}")
@@ -426,8 +422,8 @@ def analyze_single_image():
 
         print(f"🚨 ANALYZE-SINGLE: ✅ Timeframe detected: {timeframe}")
 
-        # Analyze with OpenAI using detected timeframe
-        print(f"🚨 ANALYZE-SINGLE: 🧠 Starting analysis with timeframe: {timeframe}")
+        # Analyze with OpenAI using detected timeframe with enhanced SMC analysis
+        print(f"🚨 ANALYZE-SINGLE: 🧠 Starting enhanced analysis with timeframe: {timeframe}")
         analysis = analyze_with_openai(
             image_str=image_str,
             image_format=image_format,
@@ -435,12 +431,13 @@ def analyze_single_image():
             action_type="single_analysis"
         )
 
-        print(f"🚨 ANALYZE-SINGLE: ✅ Analysis completed, length: {len(analysis)} chars")
+        print(f"🚨 ANALYZE-SINGLE: ✅ Enhanced analysis completed, length: {len(analysis)} chars")
 
         return jsonify({
             "success": True,
             "analysis": analysis,
-            "detected_timeframe": timeframe
+            "detected_timeframe": timeframe,
+            "features": ["SMC_Analysis", "Immediate_Recommendations", "Liquidity_Analysis"]
         }), 200
 
     except Exception as e:
@@ -453,11 +450,11 @@ def analyze_single_image():
             "error": f"Analysis failed: {str(e)}"
         }), 200
 
-# New endpoints for two-step user drawn analysis
 @api_bp.route('/analyze-technical', methods=['POST'])
 def analyze_technical():
     """
     Analyze the chart for technical analysis only
+    MAX 1024 CHARACTERS FOR SENDPULSE COMPATIBILITY
     """
     try:
         print(f"🚨 ANALYZE-TECHNICAL: 📥 Received request at {datetime.now()}")
@@ -548,6 +545,7 @@ def analyze_technical():
 def analyze_user_feedback():
     """
     Analyze user's drawn analysis and provide feedback
+    MAX 1024 CHARACTERS FOR SENDPULSE COMPATIBILITY
     """
     try:
         print(f"🚨 ANALYZE-USER-FEEDBACK: 📥 Received request at {datetime.now()}")
