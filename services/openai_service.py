@@ -98,20 +98,20 @@ def detect_timeframe_from_image(image_str, image_format):
         You are a professional trading chart analyzer. Your ONLY task is to detect the timeframe in trading chart images.
 
         You MUST check ALL these areas thoroughly:
-        
+
         **TOP AREAS:**
         - Top left corner (most common)
-        - Top right corner (very common) 
+        - Top right corner (very common)
         - Top center/header area
         - Chart title/header bar
-        
+
         **BOTTOM AREAS:**
         - Bottom left corner
-        - Bottom right corner  
+        - Bottom right corner
         - Bottom center below the chart
         - X-axis (time axis) labels
         - Bottom status bar or information panel
-        
+
         **OTHER AREAS:**
         - Left side panel/scale area
         - Right side panel/scale area
@@ -169,7 +169,7 @@ def detect_timeframe_from_image(image_str, image_format):
         # Enhanced cleaning and validation
         cleaned_timeframe = detected_timeframe.replace(' ', '').replace('TF:', '').replace('TIMEFRAME:', '').replace('PERIOD:', '').replace('TIMEFRAME', '').replace('PERIOD', '')
         print(f"🕵️ Cleaned timeframe: '{cleaned_timeframe}'")
-        
+
         # Comprehensive timeframe mapping - ORDER MATTERS! Check longer strings first
         timeframe_map = {
             # M15 variations - CHECK THESE FIRST to prevent M1 false positives
@@ -191,33 +191,33 @@ def detect_timeframe_from_image(image_str, image_format):
             # M1 variations - CHECK THESE LAST to prevent false positives
             '1MINUTE': 'M1', '1MIN': 'M1', '1M': 'M1', '1m': 'M1', 'M1M': 'M1'
         }
-        
+
         # Try exact match first - check in order of priority
         for timeframe_variant, standard_tf in timeframe_map.items():
             if cleaned_timeframe == timeframe_variant:
                 print(f"🕵️ Exact match: '{cleaned_timeframe}' -> '{standard_tf}'")
                 return standard_tf, None
-        
+
         # Try partial matches with priority (longer timeframes first)
         priority_timeframes = ['M15', 'M30', 'H4', 'H1', 'D1', 'W1', 'MN', 'M5', 'M1']
-        
+
         for tf in priority_timeframes:
             if tf in cleaned_timeframe:
                 print(f"🕵️ Partial match: found '{tf}' in '{cleaned_timeframe}'")
                 return tf, None
-        
+
         # Special case: if we see "15" anywhere, prioritize M15
         if '15' in cleaned_timeframe and any(word in cleaned_timeframe for word in ['M', 'MIN', 'MINUTE']):
             print(f"🕵️ Special case: '15' found in '{cleaned_timeframe}', returning M15")
             return 'M15', None
-        
+
         # Special case: if we see "1" but it's likely part of "15", be careful
         if '1' in cleaned_timeframe and '15' not in cleaned_timeframe and any(word in cleaned_timeframe for word in ['M', 'MIN', 'MINUTE']):
             # Only return M1 if we're sure it's not M15
             if cleaned_timeframe in ['1M', '1MIN', '1MINUTE', 'M1']:
                 print(f"🕵️ Confident M1 detection: '{cleaned_timeframe}'")
                 return 'M1', None
-        
+
         # Try word-based detection with M15 priority
         if any(word in cleaned_timeframe for word in ['MINUTE', 'MIN', 'M']):
             if '15' in cleaned_timeframe or 'FIFTEEN' in cleaned_timeframe:
@@ -232,7 +232,7 @@ def detect_timeframe_from_image(image_str, image_format):
             elif '1' in cleaned_timeframe and '15' not in cleaned_timeframe:
                 print(f"🕵️ Word-based: M1 detected from '{cleaned_timeframe}'")
                 return 'M1', None
-        
+
         if any(word in cleaned_timeframe for word in ['HOUR', 'H']):
             if '4' in cleaned_timeframe or 'FOUR' in cleaned_timeframe:
                 print(f"🕵️ Word-based: H4 detected from '{cleaned_timeframe}'")
@@ -240,15 +240,15 @@ def detect_timeframe_from_image(image_str, image_format):
             elif '1' in cleaned_timeframe:
                 print(f"🕵️ Word-based: H1 detected from '{cleaned_timeframe}'")
                 return 'H1', None
-        
+
         if any(word in cleaned_timeframe for word in ['DAY', 'D']):
             print(f"🕵️ Word-based: D1 detected from '{cleaned_timeframe}'")
             return 'D1', None
-        
+
         if any(word in cleaned_timeframe for word in ['WEEK', 'W']):
             print(f"🕵️ Word-based: W1 detected from '{cleaned_timeframe}'")
             return 'W1', None
-        
+
         if any(word in cleaned_timeframe for word in ['MONTH', 'MN']):
             print(f"🕵️ Word-based: MN detected from '{cleaned_timeframe}'")
             return 'MN', None
@@ -269,12 +269,12 @@ def validate_timeframe_for_analysis(image_str, image_format, expected_timeframe)
         print(f"🕵️ STRICT VALIDATION: Expecting '{expected_timeframe}'")
 
         detected_timeframe, detection_error = detect_timeframe_from_image(image_str, image_format)
-        
+
         if detection_error:
             return False, f"❌ لا يمكن تحليل الإطار الزمني للصورة. يرجى التأكد من أن الصورة تحتوي على إطار {expected_timeframe} واضح."
-        
+
         print(f"🕵️ Validation Result: Detected '{detected_timeframe}', Expected '{expected_timeframe}'")
-        
+
         if detected_timeframe == expected_timeframe:
             print(f"🕵️ ✅ Validation PASSED")
             return True, None
@@ -331,6 +331,12 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 - ركز على النقاط الأساسية
 
 **لا تضف عدد الأحرف في نهاية الرد.**
+
+**تعليمات إضافية صارمة:**
+- استخدم تنسيق نصي بسيط بدون علامات تنسيق كثيرة
+- تجنب العناوين المكررة والتنسيق الزائد
+- استخدم فقرات قصيرة وواضحة
+- لا تستخدم **علامات التمييز** إلا عند الضرورة القصوى
 """
 
     elif action_type == "single_analysis":
@@ -376,6 +382,12 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 - **لا تستخدم وقف خسارة ثابت 50 نقطة دائماً**
 - **اضبط وقف الخسارة حسب ظروف السوق**
 - **لا تضف عدد الأحرف في نهاية الرد**
+
+**تعليمات إضافية صارمة:**
+- استخدم تنسيق نصي بسيط بدون علامات تنسيق كثيرة
+- تجنب العناوين المكررة والتنسيق الزائد
+- استخدم فقرات قصيرة وواضحة
+- لا تستخدم **علامات التمييز** إلا عند الضرورة القصوى
 """
 
     elif timeframe == "H4" and previous_analysis:
@@ -407,6 +419,12 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 - قدم توصيات عملية مباشرة
 - **لا تستخدم وقف خسارة ثابت، بل ديناميكي حسب السوق**
 - **لا تضف عدد الأحرف في نهاية الرد**
+
+**تعليمات إضافية صارمة:**
+- استخدم تنسيق نصي بسيط بدون علامات تنسيق كثيرة
+- تجنب العناوين المكررة والتنسيق الزائد
+- استخدم فقرات قصيرة وواضحة
+- لا تستخدم **علامات التمييز** إلا عند الضرورة القصوى
 """
 
     elif action_type == "final_analysis":
@@ -423,7 +441,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 **🛡️ الدعم والمقاومة الرئيسية:**
 **💧 تحليل SMC وICT:**
 - مناطق السيولة (Liquidity)
-- أوامر التجميع (Order Blocks) 
+- أوامر التجميع (Order Blocks)
 - قاتل الجلسات (Session Killers)
 - مناطق العرض والطلب (Supply/Demand)
 
@@ -443,6 +461,12 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 - كن مباشراً وواضحاً
 - **اضبط وقف الخسارة ديناميكياً حسب ظروف السوق**
 - **لا تضف عدد الأحرف في نهاية الرد**
+
+**تعليمات إضافية صارمة:**
+- استخدم تنسيق نصي بسيط بدون علامات تنسيق كثيرة
+- تجنب العناوين المكررة والتنسيق الزائد
+- استخدم فقرات قصيرة وواضحة
+- لا تستخدم **علامات التمييز** إلا عند الضرورة القصوى
 """
 
     else:
@@ -478,6 +502,12 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 - كن مباشراً وواضحاً
 - **لا تستخدم وقف خسارة ثابت، بل ديناميكي حسب السوق**
 - **لا تضف عدد الأحرف في نهاية الرد**
+
+**تعليمات إضافية صارمة:**
+- استخدم تنسيق نصي بسيط بدون علامات تنسيق كثيرة
+- تجنب العناوين المكررة والتنسيق الزائد
+- استخدم فقرات قصيرة وواضحة
+- لا تستخدم **علامات التمييز** إلا عند الضرورة القصوى
 """
 
     if not client:
@@ -593,6 +623,12 @@ def analyze_technical_chart(image_str, image_format, timeframe=None):
 - كن مباشراً وواضحاً
 - **لا تستخدم وقف خسارة ثابت، بل ديناميكي حسب السوق**
 - **لا تضف عدد الأحرف في نهاية الرد**
+
+**تعليمات إضافية صارمة:**
+- استخدم تنسيق نصي بسيط بدون علامات تنسيق كثيرة
+- تجنب العناوين المكررة والتنسيق الزائد
+- استخدم فقرات قصيرة وواضحة
+- لا تستخدم **علامات التمييز** إلا عند الضرورة القصوى
 """
 
     if not client:
@@ -657,6 +693,12 @@ def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
 - التزم بـ 1000 حرف كحد أقصى
 - لا تتجاوز 1024 حرف بأي حال
 - **لا تضف عدد الأحرف في نهاية الرد**
+
+**تعليمات إضافية صارمة:**
+- استخدم تنسيق نصي بسيط بدون علامات تنسيق كثيرة
+- تجنب العناوين المكررة والتنسيق الزائد
+- استخدم فقرات قصيرة وواضحة
+- لا تستخدم **علامات التمييز** إلا عند الضرورة القصوى
 """
 
     if not client:
@@ -680,7 +722,7 @@ def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
 
         feedback = response.choices[0].message.content.strip()
         print(f"🚨 OPENAI ANALYSIS: ✅ Simple user feedback analysis completed, length: {len(feedback)} chars")
-       
+
         # NO TRIMMING - We rely on prompt engineering
         if len(feedback) > char_limit:
             print(f"🚨 OPENAI ANALYSIS: ⚠️ Feedback exceeded limit ({len(feedback)} chars), but keeping original response")
