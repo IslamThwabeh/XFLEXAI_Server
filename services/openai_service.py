@@ -1,3 +1,5 @@
+Islam.Thwabeh@PN-IslamT MINGW64 ~/XFLEXAI_Server (main)
+$ cat services/openai_service.py
 import time
 import base64
 import requests
@@ -58,7 +60,7 @@ def check_recommendations(action_type, analysis_text):
         print("⚠️ WARNING: Analysis missing 15-minute timeframe context!")
 
 def init_openai():
-    """
+[O    """
     Initialize OpenAI client and test model availability.
     Sets OPENAI_AVAILABLE, client, openai_error_message, openai_last_check.
     """
@@ -858,7 +860,7 @@ def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
         # Log the full response
         log_openai_response("user_feedback", feedback)
 
-        # NO TRIMMING - We rely on prompt engineering
+[I        # NO TRIMMING - We rely on prompt engineering
         if len(feedback) > char_limit:
             print(f"🚨 OPENAI ANALYSIS: ⚠️ Feedback exceeded limit ({len(feedback)} chars), but keeping original response")
 

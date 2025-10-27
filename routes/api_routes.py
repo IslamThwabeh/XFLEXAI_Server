@@ -7,7 +7,9 @@ from services.openai_service import (
     load_image_from_url,
     detect_timeframe_from_image,
     analyze_technical_chart,
-    analyze_user_drawn_feedback_simple
+    analyze_user_drawn_feedback_simple,
+    detect_currency_from_image,
+    validate_currency_consistency
 )
 from database.operations import get_user_by_telegram_id, redeem_registration_key
 
@@ -137,7 +139,7 @@ def analyze():
             }
             print(f"🚨 ANALYZE ENDPOINT: ❌ Returning error - OpenAI unavailable: {error_response}")
             return jsonify(error_response), 503
-
+[O
         # Initialize or get session
         if telegram_user_id not in analysis_sessions:
             analysis_sessions[telegram_user_id] = {
@@ -145,6 +147,8 @@ def analyze():
                 'second_analysis': None,
                 'first_timeframe': None,
                 'second_timeframe': None,
+                'first_currency': None,
+                'second_currency': None,
                 'user_analysis': None,
                 'status': 'ready'
             }
@@ -173,6 +177,12 @@ def analyze():
                 return jsonify(error_response), 200
 
             print(f"🚨 ANALYZE ENDPOINT: 🧠 Starting first analysis with timeframe: {timeframe}")
+            
+            # Detect currency from first image
+            print(f"🪙 ANALYZE ENDPOINT: Detecting currency from first image...")
+            first_currency, currency_error = detect_currency_from_image(image_str, image_format)
+            print(f"🪙 ANALYZE ENDPOINT: First currency detected: {first_currency}")
+            
             analysis = analyze_with_openai(image_str, image_format, timeframe, action_type='first_analysis')
 
             # Check if analysis returned a validation error (starts with ❌)
@@ -188,16 +198,17 @@ def analyze():
 
             session_data['first_analysis'] = analysis
             session_data['first_timeframe'] = timeframe
+            session_data['first_currency'] = first_currency
             session_data['status'] = 'first_done'
 
             response_data = {
                 "success": True,
-                "message": f"✅ تم تحليل {timeframe} بنجاح",
+                "message": f"✅ تم تحليل {timeframe} لـ {first_currency} بنجاح",
                 "analysis": analysis,
                 "next_action": "second_analysis",
-                "next_prompt": "الآن أرسل صورة الإطار الزمني الثاني (H4) لنفس العملة"
+                "next_prompt": f"الآن أرسل صورة الإطار الزمني الثاني (H4) لنفس العملة ({first_currency})"
             }
-            
+
             # Final logging before sending to SendPulse
             print(f"🔍 FINAL RESPONSE TO SENDPULSE - {action_type.upper()}")
             print(f"📊 Analysis length: {len(analysis)} characters")
@@ -207,7 +218,7 @@ def analyze():
             print(f"📊 Response data size: {len(str(response_data))} characters")
             print(f"📊 Analysis field size: {len(analysis)} characters")
             print(f"🚀 Sending to SendPulse...")
-            
+
             print(f"🚨 ANALYZE ENDPOINT: ✅ First analysis completed - Response: {response_data}")
             return jsonify(response_data), 200
 
@@ -232,6 +243,26 @@ def analyze():
 
             # Use H4 for second analysis
             second_timeframe = 'H4'
+            
+            # Detect currency from second image
+            print(f"🪙 ANALYZE ENDPOINT: Detecting currency from second image...")
+            second_currency, currency_error = detect_currency_from_image(image_str, image_format)
+            print(f"🪙 ANALYZE ENDPOINT: Second currency detected: {second_currency}")
+            
+            # Validate currency consistency
+            first_currency = session_data.get('first_currency')
+            if first_currency:
+                is_currency_valid, currency_error_msg = validate_currency_consistency(first_currency, second_currency)
+                if not is_currency_valid:
+                    error_response = {
+                        "success": False,
+                        "message": currency_error_msg,
+                        "validation_error": True,
+                        "expected_currency": first_currency
+                    }
+                    print(f"🚨 ANALYZE ENDPOINT: ⚠️ Currency validation failed (returning 200): {currency_error_msg}")
+                    return jsonify(error_response), 200
+
             print(f"🚨 ANALYZE ENDPOINT: 🧠 Starting second analysis with timeframe: {second_timeframe}")
             analysis = analyze_with_openai(image_str, image_format, second_timeframe, session_data['first_analysis'], action_type='second_analysis')
 
@@ -248,6 +279,7 @@ def analyze():
 
             session_data['second_analysis'] = analysis
             session_data['second_timeframe'] = second_timeframe
+            session_data['second_currency'] = second_currency
             session_data['status'] = 'both_done'
 
             print(f"🚨 ANALYZE ENDPOINT: 🧠 Generating final combined analysis")
@@ -260,12 +292,12 @@ def analyze():
 
             response_data = {
                 "success": True,
-                "message": "✅ تم التحليل الشامل بنجاح",
+                "message": f"✅ تم التحليل الشامل لـ {second_currency} بنجاح",
                 "analysis": final_analysis,
                 "next_action": "user_analysis",
                 "next_prompt": "هل تريد مشاركة تحليلك الشخصي للحصول على تقييم؟"
             }
-            
+
             # Final logging before sending to SendPulse
             print(f"🔍 FINAL RESPONSE TO SENDPULSE - {action_type.upper()}")
             print(f"📊 Analysis length: {len(final_analysis)} characters")
@@ -275,7 +307,7 @@ def analyze():
             print(f"📊 Response data size: {len(str(response_data))} characters")
             print(f"📊 Analysis field size: {len(final_analysis)} characters")
             print(f"🚀 Sending to SendPulse...")
-            
+
             print(f"🚨 ANALYZE ENDPOINT: ✅ Second analysis completed - Response: {response_data}")
             return jsonify(response_data), 200
 
@@ -304,7 +336,7 @@ def analyze():
                 "next_action": "new_session",
                 "next_prompt": "يمكنك بدء تحليل جديد"
             }
-            
+
             # Final logging before sending to SendPulse
             print(f"🔍 FINAL RESPONSE TO SENDPULSE - {action_type.upper()}")
             print(f"📊 Analysis length: {len(feedback)} characters")
@@ -314,7 +346,7 @@ def analyze():
             print(f"📊 Response data size: {len(str(response_data))} characters")
             print(f"📊 Analysis field size: {len(feedback)} characters")
             print(f"🚀 Sending to SendPulse...")
-            
+
             print(f"🚨 ANALYZE ENDPOINT: ✅ User analysis completed - Response: {response_data}")
             return jsonify(response_data), 200
 
@@ -326,6 +358,8 @@ def analyze():
                 'second_analysis': None,
                 'first_timeframe': None,
                 'second_timeframe': None,
+                'first_currency': None,
+                'second_currency': None,
                 'user_analysis': None,
                 'status': 'ready'
             }
@@ -503,29 +537,29 @@ def analyze_technical():
     """
     try:
         print(f"🚨 ANALYZE-TECHNICAL: 📥 Received request at {datetime.now()}")
-        
+
         data = request.get_json()
         print(f"🚨 ANALYZE-TECHNICAL: 📥 Request data: {data}")
-        
+
         if not data:
             return jsonify({
                 "success": False,
                 "error": "No JSON data provided"
             }), 200
-        
+
         image_url = data.get('image_url')
         print(f"🚨 ANALYZE-TECHNICAL: 🖼️ Image URL: {image_url}")
-        
+
         if not image_url:
             return jsonify({
-                "success": False, 
+                "success": False,
                 "error": "Missing image_url"
             }), 200
-        
+
         # Check OpenAI availability
         openai_available = current_app.config.get('OPENAI_AVAILABLE', False)
         print(f"🚨 ANALYZE-TECHNICAL: 🤖 OpenAI available: {openai_available}")
-        
+
         if not openai_available:
             openai_error = current_app.config.get('OPENAI_ERROR_MESSAGE', 'Unknown error')
             return jsonify({
@@ -533,42 +567,42 @@ def analyze_technical():
                 "error": "OpenAI service unavailable",
                 "message": openai_error
             }), 200
-        
+
         # Load and encode image
         print(f"🚨 ANALYZE-TECHNICAL: 📥 Loading image from URL...")
         image_str, image_format = load_image_from_url(image_url)
         print(f"🚨 ANALYZE-TECHNICAL: 🖼️ Image loaded - String: {bool(image_str)}, Format: {image_format}")
-        
+
         if not image_str:
             return jsonify({
                 "success": False,
                 "error": "Could not load image from URL"
             }), 200
-        
+
         # Detect timeframe from image
         print(f"🚨 ANALYZE-TECHNICAL: 🔍 Detecting timeframe from image...")
         timeframe, detection_error = detect_timeframe_from_image(image_str, image_format)
         print(f"🚨 ANALYZE-TECHNICAL: 🔍 Timeframe detection result: {timeframe}, Error: {detection_error}")
-        
+
         if detection_error:
             return jsonify({
                 "success": False,
                 "error": detection_error
             }), 200
-        
+
         print(f"🚨 ANALYZE-TECHNICAL: ✅ Timeframe detected: {timeframe}")
-        
+
         # Analyze technical chart only
         print(f"🚨 ANALYZE-TECHNICAL: 🧠 Starting technical analysis with timeframe: {timeframe}")
-        
+
         analysis = analyze_technical_chart(
             image_str=image_str,
             image_format=image_format,
             timeframe=timeframe
         )
-        
+
         print(f"🚨 ANALYZE-TECHNICAL: ✅ Technical analysis completed, length: {len(analysis)} chars")
-        
+
         response_data = {
             "success": True,
             "analysis": analysis,
@@ -585,14 +619,14 @@ def analyze_technical():
         print(f"📊 Response data size: {len(str(response_data))} characters")
         print(f"📊 Analysis field size: {len(analysis)} characters")
         print(f"🚀 Sending to SendPulse...")
-        
+
         return jsonify(response_data), 200
-        
+
     except Exception as e:
         print(f"🚨 ANALYZE-TECHNICAL: ❌ Exception occurred: {str(e)}")
         import traceback
         print(f"🚨 ANALYZE-TECHNICAL: ❌ Stack trace: {traceback.format_exc()}")
-        
+
         return jsonify({
             "success": False,
             "error": f"Technical analysis failed: {str(e)}"
@@ -606,29 +640,29 @@ def analyze_user_feedback():
     """
     try:
         print(f"🚨 ANALYZE-USER-FEEDBACK: 📥 Received request at {datetime.now()}")
-        
+
         data = request.get_json()
         print(f"🚨 ANALYZE-USER-FEEDBACK: 📥 Request data: {data}")
-        
+
         if not data:
             return jsonify({
                 "success": False,
                 "error": "No JSON data provided"
             }), 200
-        
+
         image_url = data.get('image_url')
         print(f"🚨 ANALYZE-USER-FEEDBACK: 🖼️ Image URL: {image_url}")
-        
+
         if not image_url:
             return jsonify({
-                "success": False, 
+                "success": False,
                 "error": "Missing image_url"
             }), 200
-        
+
         # Check OpenAI availability
         openai_available = current_app.config.get('OPENAI_AVAILABLE', False)
         print(f"🚨 ANALYZE-USER-FEEDBACK: 🤖 OpenAI available: {openai_available}")
-        
+
         if not openai_available:
             openai_error = current_app.config.get('OPENAI_ERROR_MESSAGE', 'Unknown error')
             return jsonify({
@@ -636,42 +670,42 @@ def analyze_user_feedback():
                 "error": "OpenAI service unavailable",
                 "message": openai_error
             }), 200
-        
+
         # Load and encode image
         print(f"🚨 ANALYZE-USER-FEEDBACK: 📥 Loading image from URL...")
         image_str, image_format = load_image_from_url(image_url)
         print(f"🚨 ANALYZE-USER-FEEDBACK: 🖼️ Image loaded - String: {bool(image_str)}, Format: {image_format}")
-        
+
         if not image_str:
             return jsonify({
                 "success": False,
                 "error": "Could not load image from URL"
             }), 200
-        
+
         # Detect timeframe from image
         print(f"🚨 ANALYZE-USER-FEEDBACK: 🔍 Detecting timeframe from image...")
         timeframe, detection_error = detect_timeframe_from_image(image_str, image_format)
         print(f"🚨 ANALYZE-USER-FEEDBACK: 🔍 Timeframe detection result: {timeframe}, Error: {detection_error}")
-        
+
         if detection_error:
             return jsonify({
                 "success": False,
                 "error": detection_error
             }), 200
-        
+
         print(f"🚨 ANALYZE-USER-FEEDBACK: ✅ Timeframe detected: {timeframe}")
-        
+
         # For user feedback, we don't need technical analysis context
         print(f"🚨 ANALYZE-USER-FEEDBACK: 🧠 Starting user feedback analysis with timeframe: {timeframe}")
-        
+
         feedback = analyze_user_drawn_feedback_simple(
             image_str=image_str,
             image_format=image_format,
             timeframe=timeframe
         )
-        
+
         print(f"🚨 ANALYZE-USER-FEEDBACK: ✅ User feedback analysis completed, length: {len(feedback)} chars")
-        
+
         response_data = {
             "success": True,
             "feedback": feedback,
@@ -688,14 +722,14 @@ def analyze_user_feedback():
         print(f"📊 Response data size: {len(str(response_data))} characters")
         print(f"📊 Analysis field size: {len(feedback)} characters")
         print(f"🚀 Sending to SendPulse...")
-        
+
         return jsonify(response_data), 200
-        
+
     except Exception as e:
         print(f"🚨 ANALYZE-USER-FEEDBACK: ❌ Exception occurred: {str(e)}")
         import traceback
         print(f"🚨 ANALYZE-USER-FEEDBACK: ❌ Stack trace: {traceback.format_exc()}")
-        
+
         return jsonify({
             "success": False,
             "error": f"User feedback analysis failed: {str(e)}"
