@@ -139,7 +139,7 @@ def analyze():
             }
             print(f"🚨 ANALYZE ENDPOINT: ❌ Returning error - OpenAI unavailable: {error_response}")
             return jsonify(error_response), 503
-[O
+
         # Initialize or get session
         if telegram_user_id not in analysis_sessions:
             analysis_sessions[telegram_user_id] = {
