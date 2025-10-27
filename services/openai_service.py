@@ -860,7 +860,7 @@ def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
         # Log the full response
         log_openai_response("user_feedback", feedback)
 
-[I        # NO TRIMMING - We rely on prompt engineering
+        # NO TRIMMING - We rely on prompt engineering
         if len(feedback) > char_limit:
             print(f"🚨 OPENAI ANALYSIS: ⚠️ Feedback exceeded limit ({len(feedback)} chars), but keeping original response")
 
