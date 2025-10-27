@@ -197,6 +197,17 @@ def analyze():
                 "next_action": "second_analysis",
                 "next_prompt": "الآن أرسل صورة الإطار الزمني الثاني (H4) لنفس العملة"
             }
+            
+            # Final logging before sending to SendPulse
+            print(f"🔍 FINAL RESPONSE TO SENDPULSE - {action_type.upper()}")
+            print(f"📊 Analysis length: {len(analysis)} characters")
+            print(f"📋 Final analysis preview: {analysis[:100]}...")
+            print(f"🔚 Final analysis ending: ...{analysis[-100:] if len(analysis) > 100 else analysis}")
+            print(f"🔍 FINAL CHECK BEFORE SENDPULSE:")
+            print(f"📊 Response data size: {len(str(response_data))} characters")
+            print(f"📊 Analysis field size: {len(analysis)} characters")
+            print(f"🚀 Sending to SendPulse...")
+            
             print(f"🚨 ANALYZE ENDPOINT: ✅ First analysis completed - Response: {response_data}")
             return jsonify(response_data), 200
 
@@ -254,6 +265,17 @@ def analyze():
                 "next_action": "user_analysis",
                 "next_prompt": "هل تريد مشاركة تحليلك الشخصي للحصول على تقييم؟"
             }
+            
+            # Final logging before sending to SendPulse
+            print(f"🔍 FINAL RESPONSE TO SENDPULSE - {action_type.upper()}")
+            print(f"📊 Analysis length: {len(final_analysis)} characters")
+            print(f"📋 Final analysis preview: {final_analysis[:100]}...")
+            print(f"🔚 Final analysis ending: ...{final_analysis[-100:] if len(final_analysis) > 100 else final_analysis}")
+            print(f"🔍 FINAL CHECK BEFORE SENDPULSE:")
+            print(f"📊 Response data size: {len(str(response_data))} characters")
+            print(f"📊 Analysis field size: {len(final_analysis)} characters")
+            print(f"🚀 Sending to SendPulse...")
+            
             print(f"🚨 ANALYZE ENDPOINT: ✅ Second analysis completed - Response: {response_data}")
             return jsonify(response_data), 200
 
@@ -282,6 +304,17 @@ def analyze():
                 "next_action": "new_session",
                 "next_prompt": "يمكنك بدء تحليل جديد"
             }
+            
+            # Final logging before sending to SendPulse
+            print(f"🔍 FINAL RESPONSE TO SENDPULSE - {action_type.upper()}")
+            print(f"📊 Analysis length: {len(feedback)} characters")
+            print(f"📋 Final analysis preview: {feedback[:100]}...")
+            print(f"🔚 Final analysis ending: ...{feedback[-100:] if len(feedback) > 100 else feedback}")
+            print(f"🔍 FINAL CHECK BEFORE SENDPULSE:")
+            print(f"📊 Response data size: {len(str(response_data))} characters")
+            print(f"📊 Analysis field size: {len(feedback)} characters")
+            print(f"🚀 Sending to SendPulse...")
+            
             print(f"🚨 ANALYZE ENDPOINT: ✅ User analysis completed - Response: {response_data}")
             return jsonify(response_data), 200
 
@@ -433,12 +466,24 @@ def analyze_single_image():
 
         print(f"🚨 ANALYZE-SINGLE: ✅ Enhanced analysis completed, length: {len(analysis)} chars")
 
-        return jsonify({
+        response_data = {
             "success": True,
             "analysis": analysis,
             "detected_timeframe": timeframe,
             "features": ["SMC_Analysis", "Immediate_Recommendations", "Liquidity_Analysis"]
-        }), 200
+        }
+
+        # Final logging before sending to SendPulse
+        print(f"🔍 FINAL RESPONSE TO SENDPULSE - SINGLE_ANALYSIS")
+        print(f"📊 Analysis length: {len(analysis)} characters")
+        print(f"📋 Final analysis preview: {analysis[:100]}...")
+        print(f"🔚 Final analysis ending: ...{analysis[-100:] if len(analysis) > 100 else analysis}")
+        print(f"🔍 FINAL CHECK BEFORE SENDPULSE:")
+        print(f"📊 Response data size: {len(str(response_data))} characters")
+        print(f"📊 Analysis field size: {len(analysis)} characters")
+        print(f"🚀 Sending to SendPulse...")
+
+        return jsonify(response_data), 200
 
     except Exception as e:
         print(f"🚨 ANALYZE-SINGLE: ❌ Exception occurred: {str(e)}")
@@ -524,12 +569,24 @@ def analyze_technical():
         
         print(f"🚨 ANALYZE-TECHNICAL: ✅ Technical analysis completed, length: {len(analysis)} chars")
         
-        return jsonify({
+        response_data = {
             "success": True,
             "analysis": analysis,
             "detected_timeframe": timeframe,
             "type": "technical_analysis"
-        }), 200
+        }
+
+        # Final logging before sending to SendPulse
+        print(f"🔍 FINAL RESPONSE TO SENDPULSE - TECHNICAL_ANALYSIS")
+        print(f"📊 Analysis length: {len(analysis)} characters")
+        print(f"📋 Final analysis preview: {analysis[:100]}...")
+        print(f"🔚 Final analysis ending: ...{analysis[-100:] if len(analysis) > 100 else analysis}")
+        print(f"🔍 FINAL CHECK BEFORE SENDPULSE:")
+        print(f"📊 Response data size: {len(str(response_data))} characters")
+        print(f"📊 Analysis field size: {len(analysis)} characters")
+        print(f"🚀 Sending to SendPulse...")
+        
+        return jsonify(response_data), 200
         
     except Exception as e:
         print(f"🚨 ANALYZE-TECHNICAL: ❌ Exception occurred: {str(e)}")
@@ -615,12 +672,24 @@ def analyze_user_feedback():
         
         print(f"🚨 ANALYZE-USER-FEEDBACK: ✅ User feedback analysis completed, length: {len(feedback)} chars")
         
-        return jsonify({
+        response_data = {
             "success": True,
             "feedback": feedback,
             "detected_timeframe": timeframe,
             "type": "user_feedback"
-        }), 200
+        }
+
+        # Final logging before sending to SendPulse
+        print(f"🔍 FINAL RESPONSE TO SENDPULSE - USER_FEEDBACK")
+        print(f"📊 Analysis length: {len(feedback)} characters")
+        print(f"📋 Final analysis preview: {feedback[:100]}...")
+        print(f"🔚 Final analysis ending: ...{feedback[-100:] if len(feedback) > 100 else feedback}")
+        print(f"🔍 FINAL CHECK BEFORE SENDPULSE:")
+        print(f"📊 Response data size: {len(str(response_data))} characters")
+        print(f"📊 Analysis field size: {len(feedback)} characters")
+        print(f"🚀 Sending to SendPulse...")
+        
+        return jsonify(response_data), 200
         
     except Exception as e:
         print(f"🚨 ANALYZE-USER-FEEDBACK: ❌ Exception occurred: {str(e)}")

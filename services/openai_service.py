@@ -11,6 +11,52 @@ client = None
 openai_error_message = ""
 openai_last_check = 0
 
+def log_openai_response(action_type, response_content, char_limit=1024):
+    """
+    Comprehensive logging for OpenAI responses
+    """
+    print(f"\n{'='*80}")
+    print(f"🚨 OPENAI RESPONSE LOG - {action_type.upper()}")
+    print(f"{'='*80}")
+    print(f"📊 Response length: {len(response_content)} characters")
+    print(f"📏 Character limit: {char_limit}")
+    print(f"📈 Limit exceeded: {len(response_content) > char_limit}")
+    print(f"📋 Full response content:")
+    print(f"{'='*40}")
+    print(response_content)
+    print(f"{'='*40}")
+    print(f"🔍 Response ends with: ...{response_content[-50:] if len(response_content) > 50 else response_content}")
+    print(f"{'='*80}\n")
+
+def check_recommendations(action_type, analysis_text):
+    """
+    Check if the analysis contains essential recommendations
+    """
+    print(f"\n🔍 RECOMMENDATION CHECK - {action_type.upper()}")
+    
+    # Keywords to check for in Arabic and English
+    recommendation_keywords = [
+        'توصية', 'توصيات', 'دخول', 'شراء', 'بيع', 'هدف', 'أهداف',
+        'recommendation', 'entry', 'buy', 'sell', 'target', 'stop loss'
+    ]
+    
+    timeframe_keywords = [
+        '15 دقيقة', 'ربع ساعة', 'خمسة عشر', 'القادمة', 'المقبلة',
+        '15 minute', 'next 15', 'quarter', 'coming'
+    ]
+    
+    has_recommendation = any(keyword in analysis_text.lower() for keyword in recommendation_keywords)
+    has_timeframe = any(keyword in analysis_text.lower() for keyword in timeframe_keywords)
+    
+    print(f"📊 Has recommendations: {has_recommendation}")
+    print(f"⏰ Has timeframe mention: {has_timeframe}")
+    print(f"📝 Recommendation check passed: {has_recommendation and has_timeframe}")
+    
+    if not has_recommendation:
+        print("⚠️ WARNING: Analysis missing trading recommendations!")
+    if not has_timeframe:
+        print("⚠️ WARNING: Analysis missing 15-minute timeframe context!")
+
 def init_openai():
     """
     Initialize OpenAI client and test model availability.
@@ -517,6 +563,11 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
         import time
         start_time = time.time()
 
+        # Add pre-call logging
+        print(f"🔍 OPENAI PRE-REQUEST: {action_type}")
+        print(f"🔍 Prompt length: {len(analysis_prompt)} characters")
+        print(f"🔍 Max tokens: {max_tokens}")
+
         if image_str:
             print(f"🚨 OPENAI ANALYSIS: Analyzing image with {action_type}")
             response = client.chat.completions.create(
@@ -547,7 +598,30 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 
         analysis = response.choices[0].message.content.strip()
         processing_time = time.time() - start_time
-        print(f"🚨 OPENAI ANALYSIS: ✅ Analysis completed in {processing_time:.2f}s, length: {len(analysis)} chars")
+        
+        # Comprehensive logging
+        print(f"\n{'='*60}")
+        print(f"🚨 OPENAI RAW RESPONSE - {action_type.upper()}")
+        print(f"{'='*60}")
+        print(f"⏰ Processing time: {processing_time:.2f}s")
+        print(f"📊 Response length: {len(analysis)} characters")
+        print(f"🔢 Token usage: {response.usage.total_tokens if response.usage else 'N/A'}")
+        print(f"📝 Full content:")
+        print(f"{'-'*40}")
+        print(analysis)
+        print(f"{'-'*40}")
+        print(f"{'='*60}\n")
+        
+        # Check for truncation indicators
+        if '...' in analysis[-10:] or len(analysis) >= 1020:
+            print("⚠️ WARNING: Response might be truncated!")
+
+        # Log the full response
+        log_openai_response(action_type, analysis)
+        
+        # Check for recommendations
+        if action_type in ['first_analysis', 'single_analysis', 'technical_analysis']:
+            check_recommendations(action_type, analysis)
 
         # NO TRIMMING - We rely on prompt engineering to enforce limits
         if len(analysis) > char_limit:
@@ -636,6 +710,11 @@ def analyze_technical_chart(image_str, image_format, timeframe=None):
 
     try:
         print(f"🚨 OPENAI ANALYSIS: 🧠 Starting technical analysis with timeframe: {timeframe}")
+        
+        # Add pre-call logging
+        print(f"🔍 TECHNICAL PRE-REQUEST")
+        print(f"🔍 Prompt length: {len(analysis_prompt)} characters")
+
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
@@ -651,7 +730,24 @@ def analyze_technical_chart(image_str, image_format, timeframe=None):
         )
 
         analysis = response.choices[0].message.content.strip()
-        print(f"🚨 OPENAI ANALYSIS: ✅ Technical analysis completed, length: {len(analysis)} chars")
+        
+        # Comprehensive logging
+        print(f"\n{'='*60}")
+        print(f"🚨 TECHNICAL ANALYSIS RAW RESPONSE")
+        print(f"{'='*60}")
+        print(f"📊 Response length: {len(analysis)} characters")
+        print(f"🔢 Token usage: {response.usage.total_tokens if response.usage else 'N/A'}")
+        print(f"📝 Full content:")
+        print(f"{'-'*40}")
+        print(analysis)
+        print(f"{'-'*40}")
+        print(f"{'='*60}\n")
+
+        # Log the full response
+        log_openai_response("technical_analysis", analysis)
+        
+        # Check for recommendations
+        check_recommendations("technical_analysis", analysis)
 
         # NO TRIMMING - We rely on prompt engineering
         if len(analysis) > char_limit:
@@ -706,6 +802,11 @@ def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
 
     try:
         print(f"🚨 OPENAI ANALYSIS: 🧠 Starting simple user feedback analysis with timeframe: {timeframe}")
+        
+        # Add pre-call logging
+        print(f"🔍 USER FEEDBACK PRE-REQUEST")
+        print(f"🔍 Prompt length: {len(feedback_prompt)} characters")
+
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
@@ -721,7 +822,21 @@ def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
         )
 
         feedback = response.choices[0].message.content.strip()
-        print(f"🚨 OPENAI ANALYSIS: ✅ Simple user feedback analysis completed, length: {len(feedback)} chars")
+        
+        # Comprehensive logging
+        print(f"\n{'='*60}")
+        print(f"🚨 USER FEEDBACK RAW RESPONSE")
+        print(f"{'='*60}")
+        print(f"📊 Response length: {len(feedback)} characters")
+        print(f"🔢 Token usage: {response.usage.total_tokens if response.usage else 'N/A'}")
+        print(f"📝 Full content:")
+        print(f"{'-'*40}")
+        print(feedback)
+        print(f"{'-'*40}")
+        print(f"{'='*60}\n")
+
+        # Log the full response
+        log_openai_response("user_feedback", feedback)
 
         # NO TRIMMING - We rely on prompt engineering
         if len(feedback) > char_limit:
