@@ -60,7 +60,7 @@ def check_recommendations(action_type, analysis_text):
         print("⚠️ WARNING: Analysis missing 15-minute timeframe context!")
 
 def init_openai():
-[O    """
+    """
     Initialize OpenAI client and test model availability.
     Sets OPENAI_AVAILABLE, client, openai_error_message, openai_last_check.
     """
