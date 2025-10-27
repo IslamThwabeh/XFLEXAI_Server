@@ -1,5 +1,3 @@
-Islam.Thwabeh@PN-IslamT MINGW64 ~/XFLEXAI_Server (main)
-$ cat services/openai_service.py
 import time
 import base64
 import requests
@@ -132,6 +130,134 @@ def init_openai():
         openai_error_message = f"OpenAI initialization error: {str(e)}"
         OPENAI_AVAILABLE = False
         return False
+
+def detect_currency_from_image(image_str, image_format):
+    """
+    Detect the currency pair from the chart image
+    Returns: (currency_pair, error_message)
+    """
+    try:
+        print("🪙 CURRENCY DETECTION: Detecting currency pair from image...")
+
+        system_prompt = """
+        You are a professional trading chart analyzer. Your task is to detect the currency pair in trading chart images.
+
+        You MUST check ALL these areas thoroughly:
+
+        **MAIN AREAS TO CHECK:**
+        - Chart title/header (most common)
+        - Top left corner
+        - Top right corner  
+        - Top center area
+        - Chart legend or label
+        - Any text displaying currency pairs
+
+        **CURRENCY FORMATS TO LOOK FOR:**
+        - Major pairs: EUR/USD, GBP/USD, USD/JPY, USD/CHF, AUD/USD, USD/CAD, NZD/USD
+        - Minor pairs: EUR/GBP, EUR/JPY, GBP/JPY, etc.
+        - Crypto: BTC/USD, ETH/USD, etc.
+        - With or without slash: EURUSD, EUR/USD, GBPUSD, GBP/USD
+        - Any other currency combination
+
+        **CRITICAL INSTRUCTIONS:**
+        - Scan the ENTIRE image systematically for currency pair text
+        - Look for text that appears to be a currency pair (typically 6-7 characters with optional slash)
+        - Focus on areas that typically show the instrument name
+        - If you find ANY currency pair indicator, return it in standard format (e.g., EUR/USD)
+        - If no clear currency pair found after thorough search, return 'UNKNOWN'
+
+        Return ONLY the currency pair in standard format (with slash) or 'UNKNOWN'.
+        """
+
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Perform a COMPREHENSIVE search for the currency pair label in this trading chart. Check ALL areas: chart title, top left, top right, top center, and any text labels. Return ONLY the currency pair like EUR/USD, GBP/USD or UNKNOWN if not found after thorough search."
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/{image_format};base64,{image_str}",
+                                "detail": "low"
+                            }
+                        }
+                    ]
+                }
+            ],
+            max_tokens=100,
+            temperature=0.1
+        )
+
+        detected_currency = response.choices[0].message.content.strip().upper()
+        print(f"🪙 RAW currency detection result: '{detected_currency}'")
+
+        # Clean and standardize the currency format
+        cleaned_currency = detected_currency.replace(' ', '')
+        
+        # Add slash if missing (e.g., EURUSD -> EUR/USD)
+        if len(cleaned_currency) == 6 and '/' not in cleaned_currency:
+            cleaned_currency = f"{cleaned_currency[:3]}/{cleaned_currency[3:]}"
+        
+        print(f"🪙 Cleaned currency: '{cleaned_currency}'")
+
+        # Common currency pairs for validation
+        common_pairs = [
+            'EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD', 'USD/CAD', 'NZD/USD',
+            'EUR/GBP', 'EUR/JPY', 'GBP/JPY', 'EUR/CHF', 'AUD/JPY', 'USD/CNH', 'USD/SGD',
+            'BTC/USD', 'ETH/USD', 'XAU/USD', 'XAG/USD'
+        ]
+
+        # Check if it matches common pairs
+        if cleaned_currency in common_pairs:
+            print(f"🪙 ✅ Valid currency pair detected: '{cleaned_currency}'")
+            return cleaned_currency, None
+        elif 'UNKNOWN' in cleaned_currency:
+            print(f"🪙 ❌ No currency pair detected")
+            return 'UNKNOWN', "لم يتم العثور على زوج العملات في الصورة"
+        else:
+            print(f"🪙 ⚠️ Uncommon currency pair detected: '{cleaned_currency}'")
+            return cleaned_currency, None
+
+    except Exception as e:
+        print(f"ERROR: Currency detection failed: {str(e)}")
+        return 'UNKNOWN', f"خطأ في اكتشاف زوج العملات: {str(e)}"
+
+def validate_currency_consistency(first_currency, second_currency):
+    """
+    Validate that both charts are for the same currency pair
+    Returns: (is_valid, error_message)
+    """
+    try:
+        print(f"🪙 CURRENCY VALIDATION: First: '{first_currency}', Second: '{second_currency}'")
+
+        if first_currency == 'UNKNOWN' or second_currency == 'UNKNOWN':
+            print(f"🪙 ⚠️ Currency validation skipped - one or both currencies unknown")
+            return True, None  # Skip validation if currency detection failed
+
+        # Normalize currencies for comparison (remove any spaces, make uppercase)
+        first_normalized = first_currency.replace(' ', '').upper()
+        second_normalized = second_currency.replace(' ', '').upper()
+
+        # Check if they are the same
+        if first_normalized == second_normalized:
+            print(f"🪙 ✅ Currency validation PASSED")
+            return True, None
+        else:
+            print(f"🪙 ❌ Currency validation FAILED - different currencies")
+            return False, f"❌ العملات مختلفة! الصورة الأولى لـ {first_currency} والصورة الثانية لـ {second_currency}.\n\nيرجى إرسال صور لنفس زوج العملات:\n• الصورة الأولى: M15 لـ {first_currency}\n• الصورة الثانية: H4 لـ {first_currency}"
+
+    except Exception as e:
+        print(f"ERROR: Currency validation failed: {str(e)}")
+        return True, None  # Skip validation on error to avoid blocking users
 
 def detect_timeframe_from_image(image_str, image_format):
     """
