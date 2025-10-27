@@ -33,25 +33,25 @@ def check_recommendations(action_type, analysis_text):
     Check if the analysis contains essential recommendations
     """
     print(f"\n🔍 RECOMMENDATION CHECK - {action_type.upper()}")
-    
+
     # Keywords to check for in Arabic and English
     recommendation_keywords = [
         'توصية', 'توصيات', 'دخول', 'شراء', 'بيع', 'هدف', 'أهداف',
         'recommendation', 'entry', 'buy', 'sell', 'target', 'stop loss'
     ]
-    
+
     timeframe_keywords = [
         '15 دقيقة', 'ربع ساعة', 'خمسة عشر', 'القادمة', 'المقبلة',
         '15 minute', 'next 15', 'quarter', 'coming'
     ]
-    
+
     has_recommendation = any(keyword in analysis_text.lower() for keyword in recommendation_keywords)
     has_timeframe = any(keyword in analysis_text.lower() for keyword in timeframe_keywords)
-    
+
     print(f"📊 Has recommendations: {has_recommendation}")
     print(f"⏰ Has timeframe mention: {has_timeframe}")
     print(f"📝 Recommendation check passed: {has_recommendation and has_timeframe}")
-    
+
     if not has_recommendation:
         print("⚠️ WARNING: Analysis missing trading recommendations!")
     if not has_timeframe:
@@ -354,7 +354,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 
     # ALL ANALYSIS TYPES STRICTLY LIMITED TO 1024 CHARACTERS
     char_limit = 1024
-    max_tokens = 500  # INCREASED from 300 to prevent incomplete responses
+    max_tokens = 600
 
     if action_type == "user_analysis_feedback":
         analysis_prompt = f"""
@@ -426,7 +426,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 - التزم بـ 1000 حرف كحد أقصى
 - لا تتجاوز 1024 حرف بأي حال
 - ركز على التوصيات العملية الفورية
-- **لا تستخدم وقف خسارة ثابت 50 نقطة دائماً**
+- ** لا تستخدم وقف خسارة ثابت 50 نقطة دائماً ولا تزد عن 50 نقطة بأي شكل من الاشكال**
 - **اضبط وقف الخسارة حسب ظروف السوق**
 - **لا تضف عدد الأحرف في نهاية الرد**
 - **تأكد من تضمين توصية محددة للربع ساعة القادمة في نهاية التحليل.**
@@ -600,14 +600,14 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 
         analysis = response.choices[0].message.content.strip()
         processing_time = time.time() - start_time
-        
+
         # Enhanced token usage logging
         if response.usage:
             print(f"🔢 Token Usage - Prompt: {response.usage.prompt_tokens}, Completion: {response.usage.completion_tokens}, Total: {response.usage.total_tokens}")
             print(f"🔢 Max Tokens Limit: {max_tokens}, Completion Used: {response.usage.completion_tokens}/{max_tokens}")
         else:
             print("🔢 Token Usage: Not available")
-        
+
         # Comprehensive logging
         print(f"\n{'='*60}")
         print(f"🚨 OPENAI RAW RESPONSE - {action_type.upper()}")
@@ -619,14 +619,14 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
         print(analysis)
         print(f"{'-'*40}")
         print(f"{'='*60}\n")
-        
+
         # Check for truncation indicators
         if '...' in analysis[-10:] or len(analysis) >= 1020:
             print("⚠️ WARNING: Response might be truncated!")
 
         # Log the full response
         log_openai_response(action_type, analysis)
-        
+
         # Check for recommendations
         if action_type in ['first_analysis', 'single_analysis', 'technical_analysis']:
             check_recommendations(action_type, analysis)
@@ -672,7 +672,7 @@ def analyze_technical_chart(image_str, image_format, timeframe=None):
         raise RuntimeError(f"OpenAI not available: {openai_error_message}")
 
     char_limit = 1024
-    max_tokens = 500  # INCREASED from 300 to prevent incomplete responses
+    max_tokens = 600
 
     analysis_prompt = f"""
 أنت خبير تحليل فني للمخططات المالية. قم بتحليل الرسم البياني من الناحية الفنية فقط.
@@ -718,7 +718,7 @@ def analyze_technical_chart(image_str, image_format, timeframe=None):
 
     try:
         print(f"🚨 OPENAI ANALYSIS: 🧠 Starting technical analysis with timeframe: {timeframe}")
-        
+
         # Add pre-call logging
         print(f"🔍 TECHNICAL PRE-REQUEST")
         print(f"🔍 Prompt length: {len(analysis_prompt)} characters")
@@ -738,7 +738,7 @@ def analyze_technical_chart(image_str, image_format, timeframe=None):
         )
 
         analysis = response.choices[0].message.content.strip()
-        
+
         # Enhanced token usage logging
         if response.usage:
             print(f"🔢 Token Usage - Prompt: {response.usage.prompt_tokens}, Completion: {response.usage.completion_tokens}, Total: {response.usage.total_tokens}")
@@ -759,7 +759,7 @@ def analyze_technical_chart(image_str, image_format, timeframe=None):
 
         # Log the full response
         log_openai_response("technical_analysis", analysis)
-        
+
         # Check for recommendations
         check_recommendations("technical_analysis", analysis)
 
@@ -784,7 +784,7 @@ def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
         raise RuntimeError(f"OpenAI not available: {openai_error_message}")
 
     char_limit = 1024
-    max_tokens = 500  # INCREASED from 300 to prevent incomplete responses
+    max_tokens = 600
 
     feedback_prompt = f"""
 أنت خبير تحليل فني ومدرس محترف. قم بتقييم التحليل المرسوم من قبل المستخدم على الرسم البياني.
@@ -816,7 +816,7 @@ def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
 
     try:
         print(f"🚨 OPENAI ANALYSIS: 🧠 Starting simple user feedback analysis with timeframe: {timeframe}")
-        
+
         # Add pre-call logging
         print(f"🔍 USER FEEDBACK PRE-REQUEST")
         print(f"🔍 Prompt length: {len(feedback_prompt)} characters")
@@ -836,7 +836,7 @@ def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
         )
 
         feedback = response.choices[0].message.content.strip()
-        
+
         # Enhanced token usage logging
         if response.usage:
             print(f"🔢 Token Usage - Prompt: {response.usage.prompt_tokens}, Completion: {response.usage.completion_tokens}, Total: {response.usage.total_tokens}")
