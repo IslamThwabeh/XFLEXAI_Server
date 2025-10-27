@@ -354,7 +354,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 
     # ALL ANALYSIS TYPES STRICTLY LIMITED TO 1024 CHARACTERS
     char_limit = 1024
-    max_tokens = 300  # Conservative limit to ensure 1024 characters
+    max_tokens = 500  # INCREASED from 300 to prevent incomplete responses
 
     if action_type == "user_analysis_feedback":
         analysis_prompt = f"""
@@ -413,7 +413,8 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 - المناطق الحرجة
 
 **⚡ التوصيات الفورية (5-15 دقيقة):**
-- نقاط الدخول القريبة
+- **يجب أن تتضمن توصية واضحة للربع ساعة القادم (15 دقيقة)**
+- نقاط الدخول القريبة خلال الربع ساعة القادم
 - **وقف الخسارة: ديناميكي حسب تحليل السوق (بحد أقصى 50 نقطة)**
 - **يجب أن يكون وقف الخسارة بناءً على:**
   * 📏 التقلب الحالي (ATR)
@@ -428,6 +429,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 - **لا تستخدم وقف خسارة ثابت 50 نقطة دائماً**
 - **اضبط وقف الخسارة حسب ظروف السوق**
 - **لا تضف عدد الأحرف في نهاية الرد**
+- **تأكد من تضمين توصية محددة للربع ساعة القادمة في نهاية التحليل.**
 
 **تعليمات إضافية صارمة:**
 - استخدم تنسيق نصي بسيط بدون علامات تنسيق كثيرة
@@ -599,13 +601,19 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
         analysis = response.choices[0].message.content.strip()
         processing_time = time.time() - start_time
         
+        # Enhanced token usage logging
+        if response.usage:
+            print(f"🔢 Token Usage - Prompt: {response.usage.prompt_tokens}, Completion: {response.usage.completion_tokens}, Total: {response.usage.total_tokens}")
+            print(f"🔢 Max Tokens Limit: {max_tokens}, Completion Used: {response.usage.completion_tokens}/{max_tokens}")
+        else:
+            print("🔢 Token Usage: Not available")
+        
         # Comprehensive logging
         print(f"\n{'='*60}")
         print(f"🚨 OPENAI RAW RESPONSE - {action_type.upper()}")
         print(f"{'='*60}")
         print(f"⏰ Processing time: {processing_time:.2f}s")
         print(f"📊 Response length: {len(analysis)} characters")
-        print(f"🔢 Token usage: {response.usage.total_tokens if response.usage else 'N/A'}")
         print(f"📝 Full content:")
         print(f"{'-'*40}")
         print(analysis)
@@ -664,7 +672,7 @@ def analyze_technical_chart(image_str, image_format, timeframe=None):
         raise RuntimeError(f"OpenAI not available: {openai_error_message}")
 
     char_limit = 1024
-    max_tokens = 300
+    max_tokens = 500  # INCREASED from 300 to prevent incomplete responses
 
     analysis_prompt = f"""
 أنت خبير تحليل فني للمخططات المالية. قم بتحليل الرسم البياني من الناحية الفنية فقط.
@@ -731,12 +739,18 @@ def analyze_technical_chart(image_str, image_format, timeframe=None):
 
         analysis = response.choices[0].message.content.strip()
         
+        # Enhanced token usage logging
+        if response.usage:
+            print(f"🔢 Token Usage - Prompt: {response.usage.prompt_tokens}, Completion: {response.usage.completion_tokens}, Total: {response.usage.total_tokens}")
+            print(f"🔢 Max Tokens Limit: {max_tokens}, Completion Used: {response.usage.completion_tokens}/{max_tokens}")
+        else:
+            print("🔢 Token Usage: Not available")
+
         # Comprehensive logging
         print(f"\n{'='*60}")
         print(f"🚨 TECHNICAL ANALYSIS RAW RESPONSE")
         print(f"{'='*60}")
         print(f"📊 Response length: {len(analysis)} characters")
-        print(f"🔢 Token usage: {response.usage.total_tokens if response.usage else 'N/A'}")
         print(f"📝 Full content:")
         print(f"{'-'*40}")
         print(analysis)
@@ -770,7 +784,7 @@ def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
         raise RuntimeError(f"OpenAI not available: {openai_error_message}")
 
     char_limit = 1024
-    max_tokens = 300
+    max_tokens = 500  # INCREASED from 300 to prevent incomplete responses
 
     feedback_prompt = f"""
 أنت خبير تحليل فني ومدرس محترف. قم بتقييم التحليل المرسوم من قبل المستخدم على الرسم البياني.
@@ -823,12 +837,18 @@ def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
 
         feedback = response.choices[0].message.content.strip()
         
+        # Enhanced token usage logging
+        if response.usage:
+            print(f"🔢 Token Usage - Prompt: {response.usage.prompt_tokens}, Completion: {response.usage.completion_tokens}, Total: {response.usage.total_tokens}")
+            print(f"🔢 Max Tokens Limit: {max_tokens}, Completion Used: {response.usage.completion_tokens}/{max_tokens}")
+        else:
+            print("🔢 Token Usage: Not available")
+
         # Comprehensive logging
         print(f"\n{'='*60}")
         print(f"🚨 USER FEEDBACK RAW RESPONSE")
         print(f"{'='*60}")
         print(f"📊 Response length: {len(feedback)} characters")
-        print(f"🔢 Token usage: {response.usage.total_tokens if response.usage else 'N/A'}")
         print(f"📝 Full content:")
         print(f"{'-'*40}")
         print(feedback)
