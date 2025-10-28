@@ -34,7 +34,7 @@ def check_recommendations(action_type, analysis_text):
     """
     print(f"\n🔍 RECOMMENDATION CHECK - {action_type.upper()}")
 
-    # Keywords to check for in Arabic and English
+[O    # Keywords to check for in Arabic and English
     recommendation_keywords = [
         'توصية', 'توصيات', 'دخول', 'شراء', 'بيع', 'هدف', 'أهداف',
         'recommendation', 'entry', 'buy', 'sell', 'target', 'stop loss'
@@ -232,7 +232,8 @@ def detect_currency_from_image(image_str, image_format):
         - Major pairs: EUR/USD, GBP/USD, USD/JPY, USD/CHF, AUD/USD, USD/CAD, NZD/USD
         - Minor pairs: EUR/GBP, EUR/JPY, GBP/JPY, etc.
         - Crypto: BTC/USD, ETH/USD, etc.
-        - With or without slash: EURUSD, EUR/USD, GBPUSD, GBP/USD
+        - Gold: XAU/USD, GOLD
+        - With or without slash: EURUSD, EUR/USD, GBPUSD, GBP/USD, XAUUSD, XAU/USD
         - Any other currency combination
 
         **CRITICAL INSTRUCTIONS:**
@@ -282,6 +283,10 @@ def detect_currency_from_image(image_str, image_format):
         # Add slash if missing (e.g., EURUSD -> EUR/USD)
         if len(cleaned_currency) == 6 and '/' not in cleaned_currency:
             cleaned_currency = f"{cleaned_currency[:3]}/{cleaned_currency[3:]}"
+        
+        # Handle gold specifically
+        if 'XAU' in cleaned_currency or 'GOLD' in cleaned_currency:
+            cleaned_currency = 'XAU/USD'
         
         print(f"🪙 Cleaned currency: '{cleaned_currency}'")
 
@@ -539,7 +544,7 @@ def validate_timeframe_for_analysis(image_str, image_format, expected_timeframe)
         print(f"ERROR: Timeframe validation failed: {str(e)}")
         return False, f"❌ خطأ في التحقق من الإطار الزمني: {str(e)}"
 
-def analyze_with_openai(image_str, image_format, timeframe=None, previous_analysis=None, user_analysis=None, action_type="chart_analysis"):
+def analyze_with_openai(image_str, image_format, timeframe=None, previous_analysis=None, user_analysis=None, action_type="chart_analysis", currency_pair=None):
     """
     Analyze an image or text using OpenAI with enhanced, detailed analysis.
     STRICTLY ENFORCES 1024 CHARACTER LIMIT AND 50 PIP STOP LOSS
@@ -556,19 +561,32 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
         if not is_valid:
             return error_msg
 
-    # ALL ANALYSIS TYPES STRICTLY LIMITED TO 1024 CHARACTERS
+[I    # ALL ANALYSIS TYPES STRICTLY LIMITED TO 1024 CHARACTERS
     char_limit = 1024
     max_tokens = 600
 
-    # STRICT STOP LOSS ENFORCEMENT - MAX 50 PIPS
-    stop_loss_instruction = """
-    **🛑 إعدادات وقف الخسارة الإلزامية:**
-    - **الحد الأقصى المطلق: 50 نقطة فقط**
-    - **ممنوع منعاً باتاً تجاوز 50 نقطة تحت أي ظرف**
-    - **يجب أن يكون وقف الخسارة بين 20-50 نقطة حسب التقلب**
-    - **إذا تطلب السوق أكثر من 50 نقطة، لا تقدم توصية بالتداول**
-    - **السبب: حماية رأس المال ومنع المخاطرة العالية**
-    """
+    # 🟡 SPECIAL STOP LOSS FOR GOLD vs OTHER PAIRS
+    if currency_pair and currency_pair.upper() in ['XAU/USD', 'XAUUSD', 'GOLD']:
+        stop_loss_instruction = """
+        **🟡 إعدادات وقف الخسارة الإلزامية للذهب (XAU/USD):**
+        - **انتبه: الذهب مختلف عن العملات! كل 1 نقطة في الذهب = 10 نقاط في العملات العادية**
+        - **الحد الأقصى المطلق: 5 نقاط فقط للذهب (تعادل 50 نقطة في العملات)**
+        - **ممنوع منعاً باتاً تجاوز 5 نقاط للذهب تحت أي ظرف**
+        - **يجب أن يكون وقف الخسارة بين 2-5 نقاط للذهب حسب التقلب**
+        - **إذا تطلب السوق أكثر من 5 نقاط للذهب، لا تقدم توصية بالتداول**
+        - **السبب: حماية رأس المال - 5 نقاط ذهب = 50 نقطة فعلية**
+        """
+        print("🟡 GOLD DETECTED: Using special stop loss rules (2-5 pips)")
+    else:
+        stop_loss_instruction = """
+        **🛑 إعدادات وقف الخسارة الإلزامية:**
+        - **الحد الأقصى المطلق: 50 نقطة فقط**
+        - **ممنوع منعاً باتاً تجاوز 50 نقطة تحت أي ظرف**
+        - **يجب أن يكون وقف الخسارة بين 20-50 نقطة حسب التقلب**
+        - **إذا تطلب السوق أكثر من 50 نقطة، لا تقدم توصية بالتداول**
+        - **السبب: حماية رأس المال ومنع المخاطرة العالية**
+        """
+        print("🟢 REGULAR CURRENCY: Using standard stop loss rules (20-50 pips)")
 
     if action_type == "user_analysis_feedback":
         analysis_prompt = f"""
@@ -632,8 +650,8 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 - التزم بـ 1000 حرف كحد أقصى
 - لا تتجاوز 1024 حرف بأي حال
 - ركز على التوصيات العملية الفورية
-- **ممنوع منعاً باتاً اقتراح وقف خسارة أكثر من 50 نقطة**
-- **إذا كان السوق يتطلب أكثر من 50 نقطة، اذكر أن الصفقة غير مناسبة حالياً**
+- **ممنوع منعاً باتاً اقتراح وقف خسارة أكثر من الحد المسموح**
+- **إذا كان السوق يتطلب أكثر من الحد المسموح، اذكر أن الصفقة غير مناسبة حالياً**
 - **لا تضف عدد الأحرف في نهاية الرد**
 - **تأكد من تضمين توصية محددة للربع ساعة القادمة في نهاية التحليل.**
 """
@@ -663,7 +681,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 - لا تتجاوز 1024 حرف بأي حال
 - ركز على الدمج بين الإطارين
 - قدم توصيات عملية مباشرة
-- **ممنوع منعاً باتاً اقتراح وقف خسارة أكثر من 50 نقطة**
+- **ممنوع منعاً باتاً اقتراح وقف خسارة أكثر من الحد المسموح**
 - **لا تضف عدد الأحرف في نهاية الرد**
 """
 
@@ -697,7 +715,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 - لا تتجاوز 1024 حرف بأي حال
 - ركز على التوصيات العملية
 - كن مباشراً وواضحاً
-- **ممنوع منعاً باتاً اقتراح وقف خسارة أكثر من 50 نقطة**
+- **ممنوع منعاً باتاً اقتراح وقف خسارة أكثر من الحد المسموح**
 - **لا تضف عدد الأحرف في نهاية الرد**
 """
 
@@ -730,7 +748,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 - لا تتجاوز 1024 حرف بأي حال
 - ركز على التوصيات خلال 5-15 دقيقة
 - كن مباشراً وواضحاً
-- **ممنوع منعاً باتاً اقتراح وقف خسارة أكثر من 50 نقطة**
+- **ممنوع منعاً باتاً اقتراح وقف خسارة أكثر من الحد المسموح**
 - **لا تضف عدد الأحرف في نهاية الرد**
 """
 
@@ -837,7 +855,7 @@ def load_image_from_url(image_url):
         print(f"🚨 IMAGE LOAD: ❌ Error loading image: {e}")
         return None, None
 
-def analyze_technical_chart(image_str, image_format, timeframe=None):
+def analyze_technical_chart(image_str, image_format, timeframe=None, currency_pair=None):
     """
     Analyze the technical chart only (first call)
     STRICTLY ENFORCES 1024 CHARACTER LIMIT AND 50 PIP STOP LOSS
@@ -850,15 +868,28 @@ def analyze_technical_chart(image_str, image_format, timeframe=None):
     char_limit = 1024
     max_tokens = 600
 
-    # STRICT STOP LOSS ENFORCEMENT - MAX 50 PIPS
-    stop_loss_instruction = """
-    **🛑 إعدادات وقف الخسارة الإلزامية:**
-    - **الحد الأقصى المطلق: 50 نقطة فقط**
-    - **ممنوع منعاً باتاً تجاوز 50 نقطة تحت أي ظرف**
-    - **يجب أن يكون وقف الخسارة بين 20-50 نقطة حسب التقلب**
-    - **إذا تطلب السوق أكثر من 50 نقطة، لا تقدم توصية بالتداول**
-    - **السبب: حماية رأس المال ومنع المخاطرة العالية**
-    """
+    # 🟡 SPECIAL STOP LOSS FOR GOLD vs OTHER PAIRS
+    if currency_pair and currency_pair.upper() in ['XAU/USD', 'XAUUSD', 'GOLD']:
+        stop_loss_instruction = """
+        **🟡 إعدادات وقف الخسارة الإلزامية للذهب (XAU/USD):**
+        - **انتبه: الذهب مختلف عن العملات! كل 1 نقطة في الذهب = 10 نقاط في العملات العادية**
+        - **الحد الأقصى المطلق: 5 نقاط فقط للذهب (تعادل 50 نقطة في العملات)**
+        - **ممنوع منعاً باتاً تجاوز 5 نقاط للذهب تحت أي ظرف**
+        - **يجب أن يكون وقف الخسارة بين 2-5 نقاط للذهب حسب التقلب**
+        - **إذا تطلب السوق أكثر من 5 نقاط للذهب، لا تقدم توصية بالتداول**
+        - **السبب: حماية رأس المال - 5 نقاط ذهب = 50 نقطة فعلية**
+        """
+        print("🟡 GOLD DETECTED: Using special stop loss rules (2-5 pips)")
+    else:
+        stop_loss_instruction = """
+        **🛑 إعدادات وقف الخسارة الإلزامية:**
+        - **الحد الأقصى المطلق: 50 نقطة فقط**
+        - **ممنوع منعاً باتاً تجاوز 50 نقطة تحت أي ظرف**
+        - **يجب أن يكون وقف الخسارة بين 20-50 نقطة حسب التقلب**
+        - **إذا تطلب السوق أكثر من 50 نقطة، لا تقدم توصية بالتداول**
+        - **السبب: حماية رأس المال ومنع المخاطرة العالية**
+        """
+        print("🟢 REGULAR CURRENCY: Using standard stop loss rules (20-50 pips)")
 
     analysis_prompt = f"""
 أنت خبير تحليل فني للمخططات المالية. قم بتحليل الرسم البياني من الناحية الفنية فقط.
@@ -887,7 +918,7 @@ def analyze_technical_chart(image_str, image_format, timeframe=None):
 - التزم بـ 1000 حرف كحد أقصى
 - لا تتجاوز 1024 حرف بأي حال
 - كن مباشراً وواضحاً
-- **ممنوع منعاً باتاً اقتراح وقف خسارة أكثر من 50 نقطة**
+- **ممنوع منعاً باتاً اقتراح وقف خسارة أكثر من الحد المسموح**
 - **لا تضف عدد الأحرف في نهاية الرد**
 """
 

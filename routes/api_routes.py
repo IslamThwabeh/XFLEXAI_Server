@@ -10,7 +10,7 @@ from services.openai_service import (
     analyze_user_drawn_feedback_simple,
     detect_currency_from_image,
     validate_currency_consistency,
-    shorten_analysis_text  # NEW IMPORT
+    shorten_analysis_text
 )
 from database.operations import get_user_by_telegram_id, redeem_registration_key
 
@@ -184,7 +184,8 @@ def analyze():
             first_currency, currency_error = detect_currency_from_image(image_str, image_format)
             print(f"🪙 ANALYZE ENDPOINT: First currency detected: {first_currency}")
             
-            analysis = analyze_with_openai(image_str, image_format, timeframe, action_type='first_analysis')
+            # Pass currency pair to analysis for proper stop loss rules
+            analysis = analyze_with_openai(image_str, image_format, timeframe, action_type='first_analysis', currency_pair=first_currency)
 
             # Check if analysis returned a validation error (starts with ❌)
             if analysis.startswith('❌'):
@@ -197,7 +198,7 @@ def analyze():
                 print(f"🚨 ANALYZE ENDPOINT: ⚠️ Timeframe validation failed (returning 200): {analysis}")
                 return jsonify(error_response), 200
 
-            # ✅ NEW: Check length and shorten if needed
+            # ✅ Check length and shorten if needed
             if len(analysis) > 1024:
                 print(f"📏 LENGTH CHECK: First analysis too long ({len(analysis)} chars), shortening...")
                 analysis = shorten_analysis_text(analysis)
@@ -271,7 +272,9 @@ def analyze():
                     return jsonify(error_response), 200
 
             print(f"🚨 ANALYZE ENDPOINT: 🧠 Starting second analysis with timeframe: {second_timeframe}")
-            analysis = analyze_with_openai(image_str, image_format, second_timeframe, session_data['first_analysis'], action_type='second_analysis')
+            
+            # Pass currency pair to analysis for proper stop loss rules
+            analysis = analyze_with_openai(image_str, image_format, second_timeframe, session_data['first_analysis'], action_type='second_analysis', currency_pair=second_currency)
 
             # Check if analysis returned a validation error (starts with ❌)
             if analysis.startswith('❌'):
@@ -284,7 +287,7 @@ def analyze():
                 print(f"🚨 ANALYZE ENDPOINT: ⚠️ Timeframe validation failed (returning 200): {analysis}")
                 return jsonify(error_response), 200
 
-            # ✅ NEW: Check length and shorten if needed
+            # ✅ Check length and shorten if needed
             if len(analysis) > 1024:
                 print(f"📏 LENGTH CHECK: Second analysis too long ({len(analysis)} chars), shortening...")
                 analysis = shorten_analysis_text(analysis)
@@ -296,14 +299,16 @@ def analyze():
             session_data['status'] = 'both_done'
 
             print(f"🚨 ANALYZE ENDPOINT: 🧠 Generating final combined analysis")
-            # Generate final combined analysis
+            # Generate final combined analysis with currency info
+            final_currency = second_currency or session_data.get('first_currency')
             final_analysis = analyze_with_openai(
                 None, None, "combined",
                 f"{session_data['first_timeframe']}: {session_data['first_analysis']}",
-                session_data['second_analysis'], "final_analysis"
+                session_data['second_analysis'], "final_analysis",
+                currency_pair=final_currency
             )
 
-            # ✅ NEW: Check length and shorten if needed
+            # ✅ Check length and shorten if needed
             if len(final_analysis) > 1024:
                 print(f"📏 LENGTH CHECK: Final analysis too long ({len(final_analysis)} chars), shortening...")
                 final_analysis = shorten_analysis_text(final_analysis)
@@ -345,7 +350,7 @@ def analyze():
                 None, None, None, None, user_analysis_text, "user_analysis_feedback"
             )
 
-            # ✅ NEW: Check length and shorten if needed
+            # ✅ Check length and shorten if needed
             if len(feedback) > 1024:
                 print(f"📏 LENGTH CHECK: User feedback too long ({len(feedback)} chars), shortening...")
                 feedback = shorten_analysis_text(feedback)
@@ -485,7 +490,7 @@ def analyze_single_image():
             return jsonify({
                 "success": False,
                 "error": "OpenAI service unavailable",
-                "message": openai_error
+[O                "message": openai_error
             }), 200
 
         # Load and encode image
@@ -512,18 +517,26 @@ def analyze_single_image():
                 "error": detection_error
             }), 200
 
+        # Detect currency from image
+        print(f"🪙 ANALYZE-SINGLE: Detecting currency from image...")
+        detected_currency, currency_error = detect_currency_from_image(image_str, image_format)
+        print(f"🪙 ANALYZE-SINGLE: Currency detected: {detected_currency}")
+
         print(f"🚨 ANALYZE-SINGLE: ✅ Timeframe detected: {timeframe}")
 
         # Analyze with OpenAI using detected timeframe with enhanced SMC analysis
         print(f"🚨 ANALYZE-SINGLE: 🧠 Starting enhanced analysis with timeframe: {timeframe}")
+        
+        # Pass currency pair to analysis for proper stop loss rules
         analysis = analyze_with_openai(
             image_str=image_str,
             image_format=image_format,
             timeframe=timeframe,
-            action_type="single_analysis"
+            action_type="single_analysis",
+            currency_pair=detected_currency
         )
 
-        # ✅ NEW: Check length and shorten if needed
+        # ✅ Check length and shorten if needed
         if len(analysis) > 1024:
             print(f"📏 LENGTH CHECK: Single analysis too long ({len(analysis)} chars), shortening...")
             analysis = shorten_analysis_text(analysis)
@@ -535,6 +548,7 @@ def analyze_single_image():
             "success": True,
             "analysis": analysis,
             "detected_timeframe": timeframe,
+            "detected_currency": detected_currency,
             "features": ["SMC_Analysis", "Immediate_Recommendations", "Liquidity_Analysis"]
         }
 
@@ -621,18 +635,24 @@ def analyze_technical():
                 "error": detection_error
             }), 200
 
+        # Detect currency from image
+        print(f"🪙 ANALYZE-TECHNICAL: Detecting currency from image...")
+        detected_currency, currency_error = detect_currency_from_image(image_str, image_format)
+        print(f"🪙 ANALYZE-TECHNICAL: Currency detected: {detected_currency}")
+
         print(f"🚨 ANALYZE-TECHNICAL: ✅ Timeframe detected: {timeframe}")
 
-        # Analyze technical chart only
+        # Analyze technical chart only with currency info
         print(f"🚨 ANALYZE-TECHNICAL: 🧠 Starting technical analysis with timeframe: {timeframe}")
 
         analysis = analyze_technical_chart(
             image_str=image_str,
             image_format=image_format,
-            timeframe=timeframe
+            timeframe=timeframe,
+            currency_pair=detected_currency
         )
 
-        # ✅ NEW: Check length and shorten if needed
+        # ✅ Check length and shorten if needed
         if len(analysis) > 1024:
             print(f"📏 LENGTH CHECK: Technical analysis too long ({len(analysis)} chars), shortening...")
             analysis = shorten_analysis_text(analysis)
@@ -644,6 +664,7 @@ def analyze_technical():
             "success": True,
             "analysis": analysis,
             "detected_timeframe": timeframe,
+            "detected_currency": detected_currency,
             "type": "technical_analysis"
         }
 
@@ -741,7 +762,7 @@ def analyze_user_feedback():
             timeframe=timeframe
         )
 
-        # ✅ NEW: Check length and shorten if needed
+        # ✅ Check length and shorten if needed
         if len(feedback) > 1024:
             print(f"📏 LENGTH CHECK: User feedback too long ({len(feedback)} chars), shortening...")
             feedback = shorten_analysis_text(feedback)
