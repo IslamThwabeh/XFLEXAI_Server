@@ -11,6 +11,65 @@ client = None
 openai_error_message = ""
 openai_last_check = 0
 
+def enforce_character_limit(text, max_chars=1024):
+    """
+    Enforce strict character limit by intelligently truncating the response
+    """
+    if len(text) <= max_chars:
+        return text
+    
+    print(f"⚠️ ENFORCING CHARACTER LIMIT: Response {len(text)} chars, truncating to {max_chars}")
+    
+    # Try to truncate at the last complete sentence
+    truncated = text[:max_chars]
+    
+    # Find the last complete sentence (look for period, newline, or recommendation marker)
+    last_period = truncated.rfind('.')
+    last_newline = truncated.rfind('\n')
+    last_recommendation = truncated.rfind('التوصية:')
+    last_stop = truncated.rfind('وقف الخسارة:')
+    
+    # Prefer to cut at logical points
+    cut_points = [
+        (last_recommendation, "recommendation"),
+        (last_stop, "stop loss"), 
+        (last_period, "period"),
+        (last_newline, "newline")
+    ]
+    
+    # Find the best cut point in the last 30% of the text
+    best_cut = -1
+    best_cut_type = "hard"
+    
+    for position, cut_type in cut_points:
+        if position > max_chars * 0.7:  # Only consider cuts in the last 30%
+            if position > best_cut:
+                best_cut = position
+                best_cut_type = cut_type
+    
+    if best_cut != -1:
+        truncated = truncated[:best_cut]
+        print(f"✅ Truncated at {best_cut_type} (position {best_cut})")
+    else:
+        # Hard truncation as last resort
+        truncated = truncated[:max_chars - 3] + "..."
+        print("⚠️ Hard truncation applied")
+    
+    print(f"✅ TRUNCATED TO: {len(truncated)} characters")
+    return truncated
+
+def validate_response_length(response, max_chars=1024):
+    """
+    Validate response length and provide detailed feedback
+    """
+    length = len(response)
+    if length <= max_chars:
+        return True, f"✅ Length OK: {length}/{max_chars}"
+    
+    # Calculate how much over
+    excess = length - max_chars
+    return False, f"❌ Length exceeded: {length}/{max_chars} (+{excess} chars)"
+
 def log_openai_response(action_type, response_content, char_limit=1024):
     """
     Comprehensive logging for OpenAI responses
@@ -37,7 +96,7 @@ def check_recommendations(action_type, analysis_text):
     # Keywords to check for in Arabic and English
     recommendation_keywords = [
         'توصية', 'توصيات', 'دخول', 'شراء', 'بيع', 'هدف', 'أهداف',
-        'recommendation', 'entry', 'buy', 'sell', 'target', 'stop loss'
+[O        'recommendation', 'entry', 'buy', 'sell', 'target', 'stop loss'
     ]
 
     timeframe_keywords = [
@@ -429,7 +488,7 @@ def detect_timeframe_from_image(image_str, image_format):
 
         print(f"🕵️ No valid timeframe found in '{cleaned_timeframe}', returning UNKNOWN")
         return 'UNKNOWN', None
-
+[I
     except Exception as e:
         print(f"ERROR: Improved timeframe detection failed: {str(e)}")
         return 'UNKNOWN', None
@@ -482,7 +541,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 
     # ALL ANALYSIS TYPES STRICTLY LIMITED TO 1024 CHARACTERS
     char_limit = 1024
-    max_tokens = 600
+    max_tokens = 600  # Keeping at 600 to avoid OpenAI cropping
 
     if action_type == "user_analysis_feedback":
         analysis_prompt = f"""
@@ -499,7 +558,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 5. قدم نقدًا بناءً مع حلول عملية
 
 **مهمتك:**
-- قدم تقييماً موضوعياً في حدود 1000 حرف فقط
+- قدم تقييماً موضوعياً في حدود 900 حرف فقط
 - لا تتجاوز 1024 حرف تحت أي ظرف
 - كن مباشراً وواضحاً
 - ركز على النقاط الأساسية
@@ -515,55 +574,48 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 
     elif action_type == "single_analysis":
         analysis_prompt = f"""
-أنت محلل فني محترف متخصص في تحليل العملات باستخدام مفاهيم المال الذكي والـ ICT. قدم تحليلاً شاملاً للرسم البياني.
+أنت محلل فني محترف متخصص في تحليل العملات. قدم تحليلاً مركزاً ومختصراً للرسم البياني.
 
-**المطلوب تحليل كامل يتضمن:**
+**المطلوب تحليل مختصر مع التركيز على النقاط الأساسية فقط:**
 
-### 📊 التحليل الفني لشارت {timeframe}
-**🎯 مفاهيم المال الذكي (SMC):**
-- تحليل مناطق السيولة (Liquidity)
-- تحديد أوامر التجميع (Order Blocks)
-- قاتل الجلسات (Session Killers - SK)
-- تحليل الاختراقات (Breaker Blocks)
+### التحليل الفني لـ {timeframe}
+**SMC وICT:**
+- مناطق السيولة وأوامر التجميع فقط
+- قاتل الجلسات إذا موجود
+- مناطق الاختراق الرئيسية
 
-**📈 مفاهيم ICT (Inner Circle Trader):**
-- تحليل السيولة السابقة (Previous Liquidity)
-- مناطق العرض والطلب (Supply/Demand Zones)
-- تحليل الوقت (Time Analysis)
-- حركة السعر (Price Action)
+**المستويات الرئيسية:**
+- فيبوناتشي: 38.2%, 50%, 61.8% فقط
+- الدعم والمقاومة الحرجة
 
-**📊 مستويات فيبوناتشي:**
-- تحديد المستويات الرئيسية (38.2%, 50%, 61.8%)
-- تحليل تفاعل السعر
+**التوصيات الفورية (15 دقيقة):**
+- نقطة دخول واحدة واضحة
+- وقف خسارة ديناميكي (بحد أقصى 50 نقطة)
+- هدف واحد رئيسي
+- نسبة مخاطرة إلى عائد 1:2
 
-**🛡️ الدعم والمقاومة:**
-- المستويات الرئيسية
-- المناطق الحرجة
+**تعليمات صارمة جداً:**
+- **الحد الأقصى 900 حرف فقط**
+- **لا تتجاوز 1024 حرف تحت أي ظرف**
+- **استخدم جمل قصيرة ومباشرة**
+- **تجنب العناوين المكررة**
+- **لا تستخدم علامات التنسيق الزائدة**
+- **ركز على التوصية العملية فقط**
+- **لا تكرر المعلومات**
+- **لا تضيف مقدمات طويلة**
+- **ابدأ بالتحليل مباشرة**
 
-**⚡ التوصيات الفورية (5-15 دقيقة):**
-- **يجب أن تتضمن توصية واضحة للربع ساعة القادم (15 دقيقة)**
-- نقاط الدخول القريبة خلال الربع ساعة القادم
-- **وقف الخسارة: ديناميكي حسب تحليل السوق (بحد أقصى 50 نقطة)**
-- **يجب أن يكون وقف الخسارة بناءً على:**
-  * 📏 التقلب الحالي (ATR)
-  * 🏗️ هيكل السوق والدعم/المقاومة
-  * ⚖️ نسبة المخاطرة إلى العائد (1:2 كحد أدنى)
-- أهداف جني الأرباح
+**تنسيق النص:**
+- فقرات قصيرة بدون مسافات زائدة
+- استخدم النقاط فقط عند الضرورة
+- تجنب العناوين الفرعية الكثيرة
 
-**تعليمات صارمة:**
-- التزم بـ 1000 حرف كحد أقصى
-- لا تتجاوز 1024 حرف بأي حال
-- ركز على التوصيات العملية الفورية
-- ** لا تستخدم وقف خسارة ثابت 50 نقطة دائماً ولا تزد عن 50 نقطة بأي شكل من الاشكال**
-- **اضبط وقف الخسارة حسب ظروف السوق**
-- **لا تضف عدد الأحرف في نهاية الرد**
-- **تأكد من تضمين توصية محددة للربع ساعة القادمة في نهاية التحليل.**
+**التزم بهذا الهيكل المختصر:**
+1. تحليل SMC/ICT بجملتين
+2. المستويات الرئيسية بجملتين  
+3. التوصية العملية بجملتين
 
-**تعليمات إضافية صارمة:**
-- استخدم تنسيق نصي بسيط بدون علامات تنسيق كثيرة
-- تجنب العناوين المكررة والتنسيق الزائد
-- استخدم فقرات قصيرة وواضحة
-- لا تستخدم **علامات التمييز** إلا عند الضرورة القصوى
+**لا تضف أي نص خارج هذا الإطار.**
 """
 
     elif timeframe == "H4" and previous_analysis:
@@ -589,7 +641,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 - أهداف جني الأرباح
 
 **تعليمات صارمة:**
-- التزم بـ 1000 حرف كحد أقصى
+- التزم بـ 900 حرف كحد أقصى
 - لا تتجاوز 1024 حرف بأي حال
 - ركز على الدمج بين الإطارين
 - قدم توصيات عملية مباشرة
@@ -631,7 +683,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 - أهداف جني الأرباح
 
 **تعليمات صارمة:**
-- التزم بـ 1000 حرف كحد أقصى
+- التزم بـ 900 حرف كحد أقصى
 - لا تتجاوز 1024 حرف بأي حال
 - ركز على التوصيات العملية
 - كن مباشراً وواضحاً
@@ -662,7 +714,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 - قاتل الجلسات (Session Killers)
 - مناطق الاختراق (Breaker Blocks)
 
-**⚡ التوصيات العملية الفورية:**
+[O**⚡ التوصيات العملية الفورية:**
 - نقاط الدخول القريبة
 - **وقف الخسارة: ديناميكي حسب تحليل السوق (بحد أقصى 50 نقطة)**
 - **يجب أن يكون وقف الخسارة بناءً على:**
@@ -672,7 +724,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 - أهداف جني الأرباح
 
 **تعليمات صارمة:**
-- التزم بـ 1000 حرف كحد أقصى
+- التزم بـ 900 حرف كحد أقصى
 - لا تتجاوز 1024 حرف بأي حال
 - ركز على التوصيات خلال 5-15 دقيقة
 - كن مباشراً وواضحاً
@@ -698,12 +750,22 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
         print(f"🔍 Prompt length: {len(analysis_prompt)} characters")
         print(f"🔍 Max tokens: {max_tokens}")
 
+[I        system_message = f"""
+أنت محلل فني محترف. 
+- التزم بعدم تجاوز 900 حرف في ردك. 
+- لا تضف عدد الأحرف في النهاية.
+- استخدم لغة مختصرة ومباشرة.
+- ركز على المعلومات العملية فقط.
+- تجنب المقدمات والخاتمات الطويلة.
+- إذا تجاوزت 1024 حرف، سيقوم النظام بقطع ردك.
+"""
+
         if image_str:
             print(f"🚨 OPENAI ANALYSIS: Analyzing image with {action_type}")
             response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
-                    {"role": "system", "content": f"أنت محلل فني محترف. التزم بعدم تجاوز {char_limit} حرف في ردك. لا تضف عدد الأحرف في النهاية."},
+                    {"role": "system", "content": system_message},
                     {"role": "user", "content": [
                         {"type": "text", "text": analysis_prompt},
                         {"type": "image_url", "image_url": {"url": f"data:image/{image_format.lower()};base64,{image_str}", "detail": "low"}}
@@ -718,7 +780,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
             response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
-                    {"role": "system", "content": f"أنت محلل فني محترف. التزم بعدم تجاوز {char_limit} حرف في ردك. لا تضف عدد الأحرف في النهاية."},
+                    {"role": "system", "content": system_message},
                     {"role": "user", "content": analysis_prompt}
                 ],
                 max_tokens=max_tokens,
@@ -735,6 +797,18 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
             print(f"🔢 Max Tokens Limit: {max_tokens}, Completion Used: {response.usage.completion_tokens}/{max_tokens}")
         else:
             print("🔢 Token Usage: Not available")
+
+        # Validate length
+        is_valid, length_msg = validate_response_length(analysis, char_limit)
+        print(f"📏 {length_msg}")
+
+        # ENFORCE STRICT CHARACTER LIMIT
+        if len(analysis) > char_limit:
+            print(f"🚨 CHARACTER LIMIT EXCEEDED: {len(analysis)} chars, enforcing truncation")
+            analysis = enforce_character_limit(analysis, char_limit)
+            print(f"✅ AFTER TRUNCATION: {len(analysis)} chars")
+        else:
+            print(f"✅ Character limit respected: {len(analysis)}/{char_limit} chars")
 
         # Comprehensive logging
         print(f"\n{'='*60}")
@@ -758,10 +832,6 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
         # Check for recommendations
         if action_type in ['first_analysis', 'single_analysis', 'technical_analysis']:
             check_recommendations(action_type, analysis)
-
-        # NO TRIMMING - We rely on prompt engineering to enforce limits
-        if len(analysis) > char_limit:
-            print(f"🚨 OPENAI ANALYSIS: ⚠️ Analysis exceeded limit ({len(analysis)} chars), but keeping original response")
 
         return analysis
 
@@ -800,7 +870,7 @@ def analyze_technical_chart(image_str, image_format, timeframe=None):
         raise RuntimeError(f"OpenAI not available: {openai_error_message}")
 
     char_limit = 1024
-    max_tokens = 600
+    max_tokens = 600  # Keeping at 600 to avoid OpenAI cropping
 
     analysis_prompt = f"""
 أنت خبير تحليل فني للمخططات المالية. قم بتحليل الرسم البياني من الناحية الفنية فقط.
@@ -828,7 +898,7 @@ def analyze_technical_chart(image_str, image_format, timeframe=None):
 
 **تعليمات صارمة:**
 - ركز فقط على التحليل الفني للمخطط
-- التزم بـ 1000 حرف كحد أقصى
+- التزم بـ 900 حرف كحد أقصى
 - لا تتجاوز 1024 حرف بأي حال
 - كن مباشراً وواضحاً
 - **لا تستخدم وقف خسارة ثابت، بل ديناميكي حسب السوق**
@@ -851,10 +921,20 @@ def analyze_technical_chart(image_str, image_format, timeframe=None):
         print(f"🔍 TECHNICAL PRE-REQUEST")
         print(f"🔍 Prompt length: {len(analysis_prompt)} characters")
 
+        system_message = f"""
+أنت خبير تحليل فني. 
+- التزم بعدم تجاوز 900 حرف في ردك. 
+- لا تضف عدد الأحرف في النهاية.
+- استخدم لغة مختصرة ومباشرة.
+- ركز على المعلومات العملية فقط.
+- تجنب المقدمات والخاتمات الطويلة.
+- إذا تجاوزت 1024 حرف، سيقوم النظام بقطع ردك.
+"""
+
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": "أنت خبير تحليل فني. ركز فقط على التحليل الفني. التزم بعدم تجاوز 1024 حرف. لا تضف عدد الأحرف في النهاية."},
+                {"role": "system", "content": system_message},
                 {"role": "user", "content": [
                     {"type": "text", "text": analysis_prompt},
                     {"type": "image_url", "image_url": {"url": f"data:image/{image_format.lower()};base64,{image_str}", "detail": "low"}}
@@ -874,6 +954,18 @@ def analyze_technical_chart(image_str, image_format, timeframe=None):
         else:
             print("🔢 Token Usage: Not available")
 
+        # Validate length
+        is_valid, length_msg = validate_response_length(analysis, char_limit)
+        print(f"📏 {length_msg}")
+
+        # ENFORCE STRICT CHARACTER LIMIT
+        if len(analysis) > char_limit:
+            print(f"🚨 CHARACTER LIMIT EXCEEDED: {len(analysis)} chars, enforcing truncation")
+            analysis = enforce_character_limit(analysis, char_limit)
+            print(f"✅ AFTER TRUNCATION: {len(analysis)} chars")
+        else:
+            print(f"✅ Character limit respected: {len(analysis)}/{char_limit} chars")
+
         # Comprehensive logging
         print(f"\n{'='*60}")
         print(f"🚨 TECHNICAL ANALYSIS RAW RESPONSE")
@@ -891,10 +983,6 @@ def analyze_technical_chart(image_str, image_format, timeframe=None):
         # Check for recommendations
         check_recommendations("technical_analysis", analysis)
 
-        # NO TRIMMING - We rely on prompt engineering
-        if len(analysis) > char_limit:
-            print(f"🚨 OPENAI ANALYSIS: ⚠️ Technical analysis exceeded limit ({len(analysis)} chars), but keeping original response")
-
         return analysis
 
     except Exception as e:
@@ -904,16 +992,16 @@ def analyze_technical_chart(image_str, image_format, timeframe=None):
 def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
     """
     Simple version for user feedback analysis without technical analysis context
-    STRICTLY ENFORCES 1024 CHARACTER LIMIT
+[O    STRICTLY ENFORCES 1024 CHARACTER LIMIT
     """
     global client
-
+[I
     if not OPENAI_AVAILABLE:
         raise RuntimeError(f"OpenAI not available: {openai_error_message}")
 
     char_limit = 1024
-    max_tokens = 600
-
+    max_tokens = 600  # Keeping at 600 to avoid OpenAI cropping
+[O
     feedback_prompt = f"""
 أنت خبير تحليل فني ومدرس محترف. قم بتقييم التحليل المرسوم من قبل المستخدم على الرسم البياني.
 
@@ -928,7 +1016,7 @@ def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
 **تعليمات صارمة:**
 - كن صادقاً وموضوعياً في التقييم
 - قدم نقداً بناءً يهدف لمساعدة المستخدم
-- التزم بـ 1000 حرف كحد أقصى
+- التزم بـ 900 حرف كحد أقصى
 - لا تتجاوز 1024 حرف بأي حال
 - **لا تضف عدد الأحرف في نهاية الرد**
 
@@ -949,10 +1037,20 @@ def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
         print(f"🔍 USER FEEDBACK PRE-REQUEST")
         print(f"🔍 Prompt length: {len(feedback_prompt)} characters")
 
+        system_message = f"""
+أنت مدرس تحليل فني محترف. 
+- التزم بعدم تجاوز 900 حرف في ردك. 
+- لا تضف عدد الأحرف في النهاية.
+- استخدم لغة مختصرة ومباشرة.
+- ركز على المعلومات العملية فقط.
+- تجنب المقدمات والخاتمات الطويلة.
+- إذا تجاوزت 1024 حرف، سيقوم النظام بقطع ردك.
+"""
+
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": "أنت مدرس تحليل فني محترف. قيم تحليل المستخدم المرسوم بموضوعية. التزم بعدم تجاوز 1024 حرف. لا تضف عدد الأحرف في النهاية."},
+                {"role": "system", "content": system_message},
                 {"role": "user", "content": [
                     {"type": "text", "text": feedback_prompt},
                     {"type": "image_url", "image_url": {"url": f"data:image/{image_format.lower()};base64,{image_str}", "detail": "low"}}
@@ -972,7 +1070,19 @@ def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
         else:
             print("🔢 Token Usage: Not available")
 
-        # Comprehensive logging
+        # Validate length
+        is_valid, length_msg = validate_response_length(feedback, char_limit)
+        print(f"📏 {length_msg}")
+
+        # ENFORCE STRICT CHARACTER LIMIT
+        if len(feedback) > char_limit:
+            print(f"🚨 CHARACTER LIMIT EXCEEDED: {len(feedback)} chars, enforcing truncation")
+            feedback = enforce_character_limit(feedback, char_limit)
+            print(f"✅ AFTER TRUNCATION: {len(feedback)} chars")
+        else:
+            print(f"✅ Character limit respected: {len(feedback)}/{char_limit} chars")
+
+[I        # Comprehensive logging
         print(f"\n{'='*60}")
         print(f"🚨 USER FEEDBACK RAW RESPONSE")
         print(f"{'='*60}")
@@ -985,10 +1095,6 @@ def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
 
         # Log the full response
         log_openai_response("user_feedback", feedback)
-
-        # NO TRIMMING - We rely on prompt engineering
-        if len(feedback) > char_limit:
-            print(f"🚨 OPENAI ANALYSIS: ⚠️ Feedback exceeded limit ({len(feedback)} chars), but keeping original response")
 
         return feedback
 
