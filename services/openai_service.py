@@ -96,7 +96,7 @@ def check_recommendations(action_type, analysis_text):
     # Keywords to check for in Arabic and English
     recommendation_keywords = [
         'توصية', 'توصيات', 'دخول', 'شراء', 'بيع', 'هدف', 'أهداف',
-[O        'recommendation', 'entry', 'buy', 'sell', 'target', 'stop loss'
+        'recommendation', 'entry', 'buy', 'sell', 'target', 'stop loss'
     ]
 
     timeframe_keywords = [
@@ -488,7 +488,7 @@ def detect_timeframe_from_image(image_str, image_format):
 
         print(f"🕵️ No valid timeframe found in '{cleaned_timeframe}', returning UNKNOWN")
         return 'UNKNOWN', None
-[I
+
     except Exception as e:
         print(f"ERROR: Improved timeframe detection failed: {str(e)}")
         return 'UNKNOWN', None
@@ -714,7 +714,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 - قاتل الجلسات (Session Killers)
 - مناطق الاختراق (Breaker Blocks)
 
-[O**⚡ التوصيات العملية الفورية:**
+**⚡ التوصيات العملية الفورية:**
 - نقاط الدخول القريبة
 - **وقف الخسارة: ديناميكي حسب تحليل السوق (بحد أقصى 50 نقطة)**
 - **يجب أن يكون وقف الخسارة بناءً على:**
@@ -750,7 +750,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
         print(f"🔍 Prompt length: {len(analysis_prompt)} characters")
         print(f"🔍 Max tokens: {max_tokens}")
 
-[I        system_message = f"""
+        system_message = f"""
 أنت محلل فني محترف. 
 - التزم بعدم تجاوز 900 حرف في ردك. 
 - لا تضف عدد الأحرف في النهاية.
@@ -992,16 +992,16 @@ def analyze_technical_chart(image_str, image_format, timeframe=None):
 def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
     """
     Simple version for user feedback analysis without technical analysis context
-[O    STRICTLY ENFORCES 1024 CHARACTER LIMIT
+    STRICTLY ENFORCES 1024 CHARACTER LIMIT
     """
     global client
-[I
+
     if not OPENAI_AVAILABLE:
         raise RuntimeError(f"OpenAI not available: {openai_error_message}")
 
     char_limit = 1024
     max_tokens = 600  # Keeping at 600 to avoid OpenAI cropping
-[O
+
     feedback_prompt = f"""
 أنت خبير تحليل فني ومدرس محترف. قم بتقييم التحليل المرسوم من قبل المستخدم على الرسم البياني.
 
@@ -1082,7 +1082,7 @@ def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
         else:
             print(f"✅ Character limit respected: {len(feedback)}/{char_limit} chars")
 
-[I        # Comprehensive logging
+        # Comprehensive logging
         print(f"\n{'='*60}")
         print(f"🚨 USER FEEDBACK RAW RESPONSE")
         print(f"{'='*60}")
