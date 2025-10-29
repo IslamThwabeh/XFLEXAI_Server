@@ -59,10 +59,7 @@ def check_recommendations(action_type, analysis_text):
 
 def shorten_analysis_text(analysis_text, char_limit=1024, timeframe=None, currency=None):
     """
-    Enhanced shortening that preserves critical information:
-    - Detected timeframe and currency
-    - Immediate recommendations (entry/stop loss/target)
-    - Key trading levels
+    Enhanced shortening that preserves critical information in ARABIC
     """
     global client
     
@@ -72,38 +69,37 @@ def shorten_analysis_text(analysis_text, char_limit=1024, timeframe=None, curren
     print(f"📏 SHORTENING: Analysis too long ({len(analysis_text)} chars), requesting shortening...")
 
     try:
-        # Enhanced prompt to preserve critical information
+        # ENHANCED: Use Arabic prompt to maintain language consistency
         shortening_prompt = f"""
-        CRITICAL INSTRUCTIONS - READ CAREFULLY:
-        
-        The following trading analysis is too long and MUST be shortened to under {char_limit} characters.
-        
-        **PRESERVE THESE AT ALL COSTS:**
-        1. **Detected Timeframe**: {timeframe if timeframe else 'M15'} - MUST keep this information
-        2. **Currency Pair**: {currency if currency else 'Unknown'} - MUST keep this information  
-        3. **ALL trading recommendations** (entry points, buy/sell signals)
-        4. **Stop loss levels and exact pip values**
-        5. **Take profit targets and exact pip values**
-        6. **Risk-reward ratio information**
-        7. **Key support/resistance levels**
-        
-        **REMOVE THESE TO SAVE SPACE:**
-        - Redundant technical explanations
-        - Excessive formatting characters (===, ---, ***)
-        - Repetitive analysis points
-        - Non-essential descriptions
-        - Multiple line breaks
-        - Unnecessary section headers
-        
-        **FORMATTING REQUIREMENTS:**
-        - Use concise bullet points
-        - Keep all numeric values (prices, pips, levels)
-        - Prioritize actionable recommendations
-        - Start with timeframe and currency if available
-        
-        **CHARACTER LIMIT: STRICTLY UNDER {char_limit} CHARACTERS**
-        
-        Original analysis:
+        تعليمات هامة: يجب تقصير تحليل التداول التالي ليصبح أقل من {char_limit} حرف مع الحفاظ على اللغة العربية.
+
+        **المعلومات التي يجب الحفاظ عليها:**
+        1. الإطار الزمني: {timeframe if timeframe else 'M15'}
+        2. زوج العملات: {currency if currency else 'غير معروف'}
+        3. جميع توصيات التداول (نقاط الدخول، إشارات الشراء/البيع)
+        4. مستويات وقف الخسارة وقيم النقاط بالضبط
+        5. أهداف جني الأرباح وقيم النقاط بالضبط
+        6. معلومات نسبة المخاطرة إلى العائد
+        7. مستويات الدعم والمقاومة الرئيسية
+
+        **ما يمكن إزالته لتوفير المساحة:**
+        - الشروح الفنية الزائدة
+        - أحرف التنسيق المفرطة (===, ---, ***)
+        - نقاط التحليل المتكررة
+        - الأوصاف غير الأساسية
+        - فواصل الأسطر المتعددة
+        - العناوين الفرعية غير الضرورية
+
+        **متطلبات التنسيق:**
+        - استخدم نقاطًا مختصرة
+        - احتفظ بجميع القيم الرقمية (الأسعار، النقاط، المستويات)
+        - ركز على التوصيات القابلة للتنفيذ
+        - ابدأ بالإطار الزمني والعملة إذا كانت متوفرة
+        - **يجب أن يبقى النص باللغة العربية بالكامل**
+
+        **حد الأحرف: أقل من {char_limit} حرف بشكل صارم**
+
+        التحليل الأصلي:
         {analysis_text}
         """
 
@@ -112,7 +108,7 @@ def shorten_analysis_text(analysis_text, char_limit=1024, timeframe=None, curren
             messages=[
                 {
                     "role": "system", 
-                    "content": "You are a trading analysis optimizer. Your ONLY task is to shorten analysis while PRESERVING all trading recommendations, price levels, stop loss, take profit, and timeframe information. Be extremely concise."
+                    "content": "أنت مختصر لتحليلات التداول. مهمتك الوحيدة هي تقصير التحليل مع الحفاظ على جميع توصيات التداول، مستويات الأسعار، وقف الخسارة، جني الأرباح، ومعلومات الإطار الزمني. كن موجزا جدا وحافظ على اللغة العربية."
                 },
                 {
                     "role": "user",
@@ -157,11 +153,11 @@ def shorten_analysis_text(analysis_text, char_limit=1024, timeframe=None, curren
                 else:
                     shortened = truncated + "..."
         
-        # Ensure we have timeframe and currency information
+        # Ensure we have timeframe and currency information in Arabic
         final_text = shortened
         if timeframe and timeframe not in final_text:
             # Prepend timeframe info if missing
-            timeframe_prefix = f"📊 إطار زمني: {timeframe}"
+            timeframe_prefix = f"📊 الإطار الزمني: {timeframe}"
             if currency and currency != 'UNKNOWN':
                 timeframe_prefix += f" | العملة: {currency}"
             timeframe_prefix += "\n\n"
@@ -206,7 +202,7 @@ def shorten_analysis_text(analysis_text, char_limit=1024, timeframe=None, curren
 def init_openai():
     """
     Initialize OpenAI client and test model availability.
-    Sets OPENAI_AVAILABLE, client, openai_error_message, openai_last_check.
+[O    Sets OPENAI_AVAILABLE, client, openai_error_message, openai_last_check.
     """
     global OPENAI_AVAILABLE, client, openai_error_message, openai_last_check
 
@@ -308,8 +304,10 @@ def detect_investing_frame(image_str, image_format):
         - Detect the timeframe and return it in standard format (M15, H1, H4, etc.)
         - If no investing.com signatures found, return "unknown" as frame type
         - If timeframe cannot be determined, return "UNKNOWN" for timeframe
+        - **NEVER return error messages or apologies**
 
         Return format: "frame_type,timeframe"
+        Example: "investing,M15" or "unknown,UNKNOWN"
         """
 
         response = client.chat.completions.create(
@@ -324,7 +322,7 @@ def detect_investing_frame(image_str, image_format):
                     "content": [
                         {
                             "type": "text",
-                            "text": "Analyze this chart image for investing.com signatures and detect the timeframe. Return format: 'frame_type,timeframe'"
+[I                            "text": "Analyze this chart image for investing.com signatures and detect the timeframe. Return ONLY in format: 'frame_type,timeframe'"
                         },
                         {
                             "type": "image_url",
@@ -336,7 +334,7 @@ def detect_investing_frame(image_str, image_format):
                     ]
                 }
             ],
-            max_tokens=100,
+            max_tokens=50,  # Reduced to prevent verbose responses
             temperature=0.1
         )
 
@@ -352,6 +350,10 @@ def detect_investing_frame(image_str, image_format):
             # Handle "15" as M15 specifically for investing.com
             if timeframe == '15':
                 timeframe = 'M15'
+            
+            # Validate frame_type
+            if frame_type not in ['investing', 'unknown']:
+                frame_type = 'unknown'
             
             print(f"🔄 PARSED: Frame type: '{frame_type}', Timeframe: '{timeframe}'")
             return frame_type, timeframe

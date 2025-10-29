@@ -513,8 +513,14 @@ def analyze_single_image():
         frame_type, detected_timeframe = detect_investing_frame(image_str, image_format)
         print(f"🚨 ANALYZE-SINGLE: 🔍 Frame type: {frame_type}, Timeframe: {detected_timeframe}")
 
-        # If not investing.com frame, use standard detection
-        if frame_type == "unknown":
+        # If investing.com detection returned an error message (starts with apology), treat as unknown
+        if frame_type and any(word in frame_type.lower() for word in ['sorry', 'apology', 'اسف', 'اعتذر']):
+            print(f"🚨 ANALYZE-SINGLE: ⚠️ Investing detection returned error, treating as unknown")
+            frame_type = "unknown"
+            detected_timeframe = "UNKNOWN"
+
+        # If not investing.com frame or detection failed, use standard detection
+        if frame_type == "unknown" or detected_timeframe == "UNKNOWN":
             print(f"🚨 ANALYZE-SINGLE: 🔍 Detecting timeframe from image...")
             detected_timeframe, detection_error = detect_timeframe_from_image(image_str, image_format)
             print(f"🚨 ANALYZE-SINGLE: 🔍 Timeframe detection result: {detected_timeframe}, Error: {detection_error}")
@@ -544,6 +550,17 @@ def analyze_single_image():
             action_type="single_analysis",
             currency_pair=detected_currency
         )
+
+        # ✅ Check if analysis returned an error (starts with ❌ or apology)
+        if analysis.startswith('❌') or any(word in analysis.lower() for word in ['sorry', 'apology', 'اسف', 'اعتذر']):
+            print(f"🚨 ANALYZE-SINGLE: ⚠️ Analysis returned error, using fallback analysis")
+            # Use technical analysis as fallback
+            analysis = analyze_technical_chart(
+                image_str=image_str,
+                image_format=image_format,
+                timeframe=detected_timeframe,
+                currency_pair=detected_currency
+            )
 
         # ✅ Check length and shorten if needed - UPDATED WITH TIMEFRAME AND CURRENCY
         if len(analysis) > 1024:
