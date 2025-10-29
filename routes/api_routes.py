@@ -201,10 +201,10 @@ def analyze():
                 print(f"🚨 ANALYZE ENDPOINT: ⚠️ Timeframe validation failed (returning 200): {analysis}")
                 return jsonify(error_response), 200
 
-            # ✅ Check length and shorten if needed
+            # ✅ Check length and shorten if needed - UPDATED WITH TIMEFRAME AND CURRENCY
             if len(analysis) > 1024:
                 print(f"📏 LENGTH CHECK: First analysis too long ({len(analysis)} chars), shortening...")
-                analysis = shorten_analysis_text(analysis)
+                analysis = shorten_analysis_text(analysis, timeframe=timeframe, currency=first_currency)
                 print(f"📏 LENGTH CHECK: After shortening: {len(analysis)} chars")
 
             session_data['first_analysis'] = analysis
@@ -290,10 +290,10 @@ def analyze():
                 print(f"🚨 ANALYZE ENDPOINT: ⚠️ Timeframe validation failed (returning 200): {analysis}")
                 return jsonify(error_response), 200
 
-            # ✅ Check length and shorten if needed
+            # ✅ Check length and shorten if needed - UPDATED WITH TIMEFRAME AND CURRENCY
             if len(analysis) > 1024:
                 print(f"📏 LENGTH CHECK: Second analysis too long ({len(analysis)} chars), shortening...")
-                analysis = shorten_analysis_text(analysis)
+                analysis = shorten_analysis_text(analysis, timeframe=second_timeframe, currency=second_currency)
                 print(f"📏 LENGTH CHECK: After shortening: {len(analysis)} chars")
 
             session_data['second_analysis'] = analysis
@@ -311,10 +311,10 @@ def analyze():
                 currency_pair=final_currency
             )
 
-            # ✅ Check length and shorten if needed
+            # ✅ Check length and shorten if needed - UPDATED WITH TIMEFRAME AND CURRENCY
             if len(final_analysis) > 1024:
                 print(f"📏 LENGTH CHECK: Final analysis too long ({len(final_analysis)} chars), shortening...")
-                final_analysis = shorten_analysis_text(final_analysis)
+                final_analysis = shorten_analysis_text(final_analysis, timeframe="مدمج", currency=final_currency)
                 print(f"📏 LENGTH CHECK: After shortening: {len(final_analysis)} chars")
 
             response_data = {
@@ -353,7 +353,7 @@ def analyze():
                 None, None, None, None, user_analysis_text, "user_analysis_feedback"
             )
 
-            # ✅ Check length and shorten if needed
+            # ✅ Check length and shorten if needed (no timeframe/currency for user analysis)
             if len(feedback) > 1024:
                 print(f"📏 LENGTH CHECK: User feedback too long ({len(feedback)} chars), shortening...")
                 feedback = shorten_analysis_text(feedback)
@@ -545,10 +545,10 @@ def analyze_single_image():
             currency_pair=detected_currency
         )
 
-        # ✅ Check length and shorten if needed
+        # ✅ Check length and shorten if needed - UPDATED WITH TIMEFRAME AND CURRENCY
         if len(analysis) > 1024:
             print(f"📏 LENGTH CHECK: Single analysis too long ({len(analysis)} chars), shortening...")
-            analysis = shorten_analysis_text(analysis)
+            analysis = shorten_analysis_text(analysis, timeframe=detected_timeframe, currency=detected_currency)
             print(f"📏 LENGTH CHECK: After shortening: {len(analysis)} chars")
 
         print(f"🚨 ANALYZE-SINGLE: ✅ Enhanced analysis completed, length: {len(analysis)} chars")
@@ -668,10 +668,10 @@ def analyze_technical():
             currency_pair=detected_currency
         )
 
-        # ✅ Check length and shorten if needed
+        # ✅ Check length and shorten if needed - UPDATED WITH TIMEFRAME AND CURRENCY
         if len(analysis) > 1024:
             print(f"📏 LENGTH CHECK: Technical analysis too long ({len(analysis)} chars), shortening...")
-            analysis = shorten_analysis_text(analysis)
+            analysis = shorten_analysis_text(analysis, timeframe=detected_timeframe, currency=detected_currency)
             print(f"📏 LENGTH CHECK: After shortening: {len(analysis)} chars")
 
         print(f"🚨 ANALYZE-TECHNICAL: ✅ Technical analysis completed, length: {len(analysis)} chars")
@@ -779,10 +779,10 @@ def analyze_user_feedback():
             timeframe=timeframe
         )
 
-        # ✅ Check length and shorten if needed
+        # ✅ Check length and shorten if needed - UPDATED WITH TIMEFRAME
         if len(feedback) > 1024:
             print(f"📏 LENGTH CHECK: User feedback too long ({len(feedback)} chars), shortening...")
-            feedback = shorten_analysis_text(feedback)
+            feedback = shorten_analysis_text(feedback, timeframe=timeframe)
             print(f"📏 LENGTH CHECK: After shortening: {len(feedback)} chars")
 
         print(f"🚨 ANALYZE-USER-FEEDBACK: ✅ User feedback analysis completed, length: {len(feedback)} chars")

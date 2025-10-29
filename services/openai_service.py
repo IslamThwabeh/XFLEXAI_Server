@@ -57,10 +57,12 @@ def check_recommendations(action_type, analysis_text):
     if not has_timeframe:
         print("⚠️ WARNING: Analysis missing 15-minute timeframe context!")
 
-def shorten_analysis_text(analysis_text, char_limit=1024):
+def shorten_analysis_text(analysis_text, char_limit=1024, timeframe=None, currency=None):
     """
-    Shorten analysis text to fit within character limit by asking OpenAI to summarize it
-    Returns: shortened text that fits within char_limit
+    Enhanced shortening that preserves critical information:
+    - Detected timeframe and currency
+    - Immediate recommendations (entry/stop loss/target)
+    - Key trading levels
     """
     global client
     
@@ -70,23 +72,36 @@ def shorten_analysis_text(analysis_text, char_limit=1024):
     print(f"📏 SHORTENING: Analysis too long ({len(analysis_text)} chars), requesting shortening...")
 
     try:
-        # Prompt to shorten the analysis while keeping key information
+        # Enhanced prompt to preserve critical information
         shortening_prompt = f"""
-        The following trading analysis is too long and needs to be shortened to under {char_limit} characters.
-        Please create a concise version that preserves:
-        - All trading recommendations (buy/sell/entry/exit)
-        - Key price levels and targets
-        - Stop loss information
-        - Risk management details
-        - Essential technical analysis points
+        CRITICAL INSTRUCTIONS - READ CAREFULLY:
         
-        Remove:
-        - Redundant explanations
-        - Excessive formatting
-        - Repetitive information
-        - Non-essential details
+        The following trading analysis is too long and MUST be shortened to under {char_limit} characters.
         
-        Keep the response under {char_limit} characters strictly.
+        **PRESERVE THESE AT ALL COSTS:**
+        1. **Detected Timeframe**: {timeframe if timeframe else 'M15'} - MUST keep this information
+        2. **Currency Pair**: {currency if currency else 'Unknown'} - MUST keep this information  
+        3. **ALL trading recommendations** (entry points, buy/sell signals)
+        4. **Stop loss levels and exact pip values**
+        5. **Take profit targets and exact pip values**
+        6. **Risk-reward ratio information**
+        7. **Key support/resistance levels**
+        
+        **REMOVE THESE TO SAVE SPACE:**
+        - Redundant technical explanations
+        - Excessive formatting characters (===, ---, ***)
+        - Repetitive analysis points
+        - Non-essential descriptions
+        - Multiple line breaks
+        - Unnecessary section headers
+        
+        **FORMATTING REQUIREMENTS:**
+        - Use concise bullet points
+        - Keep all numeric values (prices, pips, levels)
+        - Prioritize actionable recommendations
+        - Start with timeframe and currency if available
+        
+        **CHARACTER LIMIT: STRICTLY UNDER {char_limit} CHARACTERS**
         
         Original analysis:
         {analysis_text}
@@ -97,14 +112,14 @@ def shorten_analysis_text(analysis_text, char_limit=1024):
             messages=[
                 {
                     "role": "system", 
-                    "content": "You are a trading analysis summarizer. Your ONLY task is to shorten trading analysis while preserving all critical trading information, recommendations, and key levels."
+                    "content": "You are a trading analysis optimizer. Your ONLY task is to shorten analysis while PRESERVING all trading recommendations, price levels, stop loss, take profit, and timeframe information. Be extremely concise."
                 },
                 {
                     "role": "user",
                     "content": shortening_prompt
                 }
             ],
-            max_tokens=800,
+            max_tokens=600,
             temperature=0.1
         )
 
@@ -112,25 +127,80 @@ def shorten_analysis_text(analysis_text, char_limit=1024):
         
         print(f"📏 SHORTENING: Original: {len(analysis_text)} chars -> Shortened: {len(shortened)} chars")
         
-        # If still too long, do basic truncation as fallback
+        # Enhanced fallback truncation that preserves recommendations
         if len(shortened) > char_limit:
-            print(f"📏 SHORTENING: ⚠️ Still too long after OpenAI shortening, using truncation")
-            # Try to truncate at the last complete sentence before the limit
-            truncated = shortened[:char_limit-3]
-            last_period = truncated.rfind('.')
-            if last_period > char_limit * 0.7:  # Only use if we have a reasonable amount of text
-                shortened = truncated[:last_period+1] + ".."
+            print(f"📏 SHORTENING: ⚠️ Still too long after OpenAI shortening, using smart truncation")
+            
+            # Try to find the recommendations section and preserve it
+            recommendation_keywords = ['دخول', 'شراء', 'بيع', 'وقف', 'هدف', 'توصية', 'entry', 'buy', 'sell', 'stop loss', 'target']
+            
+            # Look for the last occurrence of recommendations
+            last_rec_index = -1
+            for keyword in recommendation_keywords:
+                idx = analysis_text.lower().rfind(keyword)
+                if idx > last_rec_index:
+                    last_rec_index = idx
+            
+            if last_rec_index > char_limit * 0.6:  # If recommendations are in the second half
+                # Keep the end part with recommendations
+                start_index = max(0, last_rec_index - 200)  # Include some context before recommendations
+                shortened = analysis_text[start_index:char_limit] + "..."
             else:
-                shortened = truncated + "..."
+                # Basic smart truncation at sentence boundary
+                truncated = analysis_text[:char_limit-3]
+                last_period = truncated.rfind('.')
+                last_newline = truncated.rfind('\n')
+                
+                cutoff_point = max(last_period, last_newline)
+                if cutoff_point > char_limit * 0.7:  # Only use if we have reasonable text
+                    shortened = truncated[:cutoff_point+1] + ".."
+                else:
+                    shortened = truncated + "..."
         
-        print(f"📏 SHORTENING: ✅ Final length: {len(shortened)} chars")
-        return shortened
+        # Ensure we have timeframe and currency information
+        final_text = shortened
+        if timeframe and timeframe not in final_text:
+            # Prepend timeframe info if missing
+            timeframe_prefix = f"📊 إطار زمني: {timeframe}"
+            if currency and currency != 'UNKNOWN':
+                timeframe_prefix += f" | العملة: {currency}"
+            timeframe_prefix += "\n\n"
+            
+            # Check if we have room for the prefix
+            if len(timeframe_prefix + final_text) <= char_limit:
+                final_text = timeframe_prefix + final_text
+            else:
+                # Remove some characters to make room
+                space_needed = len(timeframe_prefix)
+                final_text = final_text[:char_limit - space_needed - 3] + "..."
+                final_text = timeframe_prefix + final_text
+        
+        print(f"📏 SHORTENING: ✅ Final length: {len(final_text)} chars")
+        return final_text
 
     except Exception as e:
         print(f"📏 SHORTENING: ❌ Error shortening analysis: {str(e)}")
-        # Fallback: basic truncation
-        truncated = analysis_text[:char_limit-3] + "..."
-        print(f"📏 SHORTENING: 🛟 Using fallback truncation: {len(truncated)} chars")
+        # Enhanced fallback: preserve recommendations in truncation
+        truncated = analysis_text[:char_limit-3]
+        
+        # Try to end at a reasonable point
+        for punctuation in ['.', '\n', ';']:
+            last_pos = truncated.rfind(punctuation)
+            if last_pos > char_limit * 0.8:
+                truncated = truncated[:last_pos+1]
+                break
+                
+        # Add timeframe info if available
+        if timeframe:
+            timeframe_info = f"📊 الإطار: {timeframe}"
+            if currency and currency != 'UNKNOWN':
+                timeframe_info += f" | {currency}"
+            truncated = timeframe_info + "\n" + truncated
+        
+        if len(truncated) > char_limit:
+            truncated = truncated[:char_limit-3] + "..."
+            
+        print(f"📏 SHORTENING: 🛟 Using enhanced fallback truncation: {len(truncated)} chars")
         return truncated
 
 def init_openai():
