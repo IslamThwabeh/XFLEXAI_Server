@@ -34,7 +34,7 @@ def check_recommendations(action_type, analysis_text):
     """
     print(f"\n🔍 RECOMMENDATION CHECK - {action_type.upper()}")
 
-[O    # Keywords to check for in Arabic and English
+    # Keywords to check for in Arabic and English
     recommendation_keywords = [
         'توصية', 'توصيات', 'دخول', 'شراء', 'بيع', 'هدف', 'أهداف',
         'recommendation', 'entry', 'buy', 'sell', 'target', 'stop loss'
@@ -207,6 +207,186 @@ def init_openai():
         OPENAI_AVAILABLE = False
         return False
 
+def detect_investing_frame(image_str, image_format):
+    """
+    Enhanced frame detection for investing.com frames
+    Returns: (frame_type, timeframe)
+    """
+    try:
+        print("🔄 INVESTING FRAME DETECTION: Detecting investing.com frame...")
+
+        system_prompt = """
+        You are a professional trading chart analyzer. Your task is to detect if this is an investing.com chart frame and identify the timeframe.
+
+        **INVESTING.COM SIGNATURES TO LOOK FOR:**
+        - "Investing" text anywhere
+        - "powered by TradingView" 
+        - "NASDAQ", "NYSE", or other stock exchange names
+        - Company names like "Tesla", "Apple", etc.
+        - Volume displayed as "1.387M" format
+        - Specific layout with time selection buttons
+
+        **TIMEFRAME DETECTION FOR INVESTING.COM:**
+        - Look for timeframe indicators: "15", "30", "1H", "4H", "1D", "1W", "1M"
+        - Check top areas where timeframe buttons are typically located
+        - "15" typically means M15 (15 minutes)
+        - "1H" means H1 (1 hour)
+        - "4H" means H4 (4 hours)
+
+        **CRITICAL INSTRUCTIONS:**
+        - If you see ANY investing.com signatures, return "investing" as frame type
+        - Detect the timeframe and return it in standard format (M15, H1, H4, etc.)
+        - If no investing.com signatures found, return "unknown" as frame type
+        - If timeframe cannot be determined, return "UNKNOWN" for timeframe
+
+        Return format: "frame_type,timeframe"
+        """
+
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Analyze this chart image for investing.com signatures and detect the timeframe. Return format: 'frame_type,timeframe'"
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/{image_format};base64,{image_str}",
+                                "detail": "low"
+                            }
+                        }
+                    ]
+                }
+            ],
+            max_tokens=100,
+            temperature=0.1
+        )
+
+        result = response.choices[0].message.content.strip()
+        print(f"🔄 RAW investing frame detection result: '{result}'")
+
+        # Parse the result
+        if ',' in result:
+            frame_type, timeframe = result.split(',', 1)
+            frame_type = frame_type.strip().lower()
+            timeframe = timeframe.strip().upper()
+            
+            # Handle "15" as M15 specifically for investing.com
+            if timeframe == '15':
+                timeframe = 'M15'
+            
+            print(f"🔄 PARSED: Frame type: '{frame_type}', Timeframe: '{timeframe}'")
+            return frame_type, timeframe
+        else:
+            print(f"🔄 ❌ Invalid format from investing frame detection: '{result}'")
+            return "unknown", "UNKNOWN"
+
+    except Exception as e:
+        print(f"ERROR: Investing frame detection failed: {str(e)}")
+        return "unknown", "UNKNOWN"
+
+def extract_investing_data(image_str, image_format):
+    """
+    Extract data from investing.com frame format
+    Returns: dictionary with extracted data
+    """
+    try:
+        print("📊 INVESTING DATA EXTRACTION: Extracting data from investing.com frame...")
+
+        system_prompt = """
+        You are a professional trading data extractor. Your task is to extract key trading data from investing.com charts.
+
+        **DATA TO EXTRACT:**
+        - Current price
+        - High (H) price
+        - Low (L) price  
+        - Close (C) price
+        - Open price if available
+        - Volume data (typically in M or K format like "1.387M")
+        - Currency pair or stock symbol
+
+        **INVESTING.COM SPECIFIC FORMATS:**
+        - Prices are often displayed as: "H463.61 L461.85 C461.98"
+        - Volume: "1.387M" (means 1.387 million)
+        - Company names and stock symbols
+
+        **INSTRUCTIONS:**
+        - Extract all available price data
+        - Convert volume from "1.387M" to numeric value (1387000)
+        - Return data in structured format
+        - If data not available, mark as None
+
+        Return ONLY a JSON-like structure with the extracted data.
+        """
+
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Extract all trading data from this investing.com chart. Return structured data."
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/{image_format};base64,{image_str}",
+                                "detail": "low"
+                            }
+                        }
+                    ]
+                }
+            ],
+            max_tokens=300,
+            temperature=0.1
+        )
+
+        extracted_data_text = response.choices[0].message.content.strip()
+        print(f"📊 RAW investing data extraction: '{extracted_data_text}'")
+
+        # Parse the extracted data (this is a simplified version)
+        # In a real implementation, you would parse the JSON-like structure
+        data = {
+            'current_price': None,
+            'high': None,
+            'low': None,
+            'close': None,
+            'volume': None,
+            'source': 'investing.com'
+        }
+
+        # Simple parsing logic (enhance this based on actual response format)
+        if 'H' in extracted_data_text:
+            # Extract high price
+            pass
+        if 'L' in extracted_data_text:
+            # Extract low price
+            pass
+        if 'C' in extracted_data_text:
+            # Extract close price
+            pass
+
+        print(f"📊 EXTRACTED DATA: {data}")
+        return data
+
+    except Exception as e:
+        print(f"ERROR: Investing data extraction failed: {str(e)}")
+        return {}
+
 def detect_currency_from_image(image_str, image_format):
     """
     Detect the currency pair from the chart image
@@ -378,6 +558,7 @@ def detect_timeframe_from_image(image_str, image_format):
         - Variations: 15M, 15m, 1H, 1h, 4H, 4h, 1D, 1d, 1W, 1w
         - Full words: 1 Minute, 5 Minutes, 15 Minutes, 30 Minutes, 1 Hour, 4 Hours, Daily, Weekly, Monthly
         - With labels: TF: M15, Timeframe: H4, Period: D1
+        - Investing.com specific: "15" (means M15), "1H", "4H", etc.
 
         **CRITICAL INSTRUCTIONS:**
         - Scan the ENTIRE image systematically from top to bottom, left to right
@@ -429,6 +610,8 @@ def detect_timeframe_from_image(image_str, image_format):
         timeframe_map = {
             # M15 variations - CHECK THESE FIRST to prevent M1 false positives
             '15MINUTES': 'M15', '15MINUTE': 'M15', '15MIN': 'M15', '15M': 'M15', '15m': 'M15', 'M15M': 'M15',
+            # Special case for investing.com "15"
+            '15': 'M15',
             # M30 variations
             '30MINUTES': 'M30', '30MINUTE': 'M30', '30MIN': 'M30', '30M': 'M30', '30m': 'M30', 'M30M': 'M30',
             # H4 variations
@@ -561,7 +744,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
         if not is_valid:
             return error_msg
 
-[I    # ALL ANALYSIS TYPES STRICTLY LIMITED TO 1024 CHARACTERS
+    # ALL ANALYSIS TYPES STRICTLY LIMITED TO 1024 CHARACTERS
     char_limit = 1024
     max_tokens = 600
 

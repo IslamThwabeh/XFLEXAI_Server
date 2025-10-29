@@ -10,8 +10,11 @@ from services.openai_service import (
     analyze_user_drawn_feedback_simple,
     detect_currency_from_image,
     validate_currency_consistency,
-    shorten_analysis_text
+    shorten_analysis_text,
+    detect_investing_frame,
+    extract_investing_data
 )
+
 from database.operations import get_user_by_telegram_id, redeem_registration_key
 
 api_bp = Blueprint('api_bp', __name__)
@@ -490,7 +493,7 @@ def analyze_single_image():
             return jsonify({
                 "success": False,
                 "error": "OpenAI service unavailable",
-[O                "message": openai_error
+                "message": openai_error
             }), 200
 
         # Load and encode image
@@ -505,33 +508,39 @@ def analyze_single_image():
                 "error": "Could not load image from URL"
             }), 200
 
-        # Detect timeframe from image
-        print(f"🚨 ANALYZE-SINGLE: 🔍 Detecting timeframe from image...")
-        timeframe, detection_error = detect_timeframe_from_image(image_str, image_format)
-        print(f"🚨 ANALYZE-SINGLE: 🔍 Timeframe detection result: {timeframe}, Error: {detection_error}")
+        # Detect investing.com frame first
+        print(f"🚨 ANALYZE-SINGLE: 🔍 Detecting frame type...")
+        frame_type, detected_timeframe = detect_investing_frame(image_str, image_format)
+        print(f"🚨 ANALYZE-SINGLE: 🔍 Frame type: {frame_type}, Timeframe: {detected_timeframe}")
 
-        if detection_error:
-            print(f"🚨 ANALYZE-SINGLE: ❌ Timeframe detection failed: {detection_error}")
-            return jsonify({
-                "success": False,
-                "error": detection_error
-            }), 200
+        # If not investing.com frame, use standard detection
+        if frame_type == "unknown":
+            print(f"🚨 ANALYZE-SINGLE: 🔍 Detecting timeframe from image...")
+            detected_timeframe, detection_error = detect_timeframe_from_image(image_str, image_format)
+            print(f"🚨 ANALYZE-SINGLE: 🔍 Timeframe detection result: {detected_timeframe}, Error: {detection_error}")
+
+            if detection_error:
+                print(f"🚨 ANALYZE-SINGLE: ❌ Timeframe detection failed: {detection_error}")
+                return jsonify({
+                    "success": False,
+                    "error": detection_error
+                }), 200
 
         # Detect currency from image
         print(f"🪙 ANALYZE-SINGLE: Detecting currency from image...")
         detected_currency, currency_error = detect_currency_from_image(image_str, image_format)
         print(f"🪙 ANALYZE-SINGLE: Currency detected: {detected_currency}")
 
-        print(f"🚨 ANALYZE-SINGLE: ✅ Timeframe detected: {timeframe}")
+        print(f"🚨 ANALYZE-SINGLE: ✅ Timeframe detected: {detected_timeframe}")
 
         # Analyze with OpenAI using detected timeframe with enhanced SMC analysis
-        print(f"🚨 ANALYZE-SINGLE: 🧠 Starting enhanced analysis with timeframe: {timeframe}")
+        print(f"🚨 ANALYZE-SINGLE: 🧠 Starting enhanced analysis with timeframe: {detected_timeframe}")
         
         # Pass currency pair to analysis for proper stop loss rules
         analysis = analyze_with_openai(
             image_str=image_str,
             image_format=image_format,
-            timeframe=timeframe,
+            timeframe=detected_timeframe,
             action_type="single_analysis",
             currency_pair=detected_currency
         )
@@ -547,8 +556,9 @@ def analyze_single_image():
         response_data = {
             "success": True,
             "analysis": analysis,
-            "detected_timeframe": timeframe,
+            "detected_timeframe": detected_timeframe,
             "detected_currency": detected_currency,
+            "frame_type": frame_type,
             "features": ["SMC_Analysis", "Immediate_Recommendations", "Liquidity_Analysis"]
         }
 
@@ -624,31 +634,37 @@ def analyze_technical():
                 "error": "Could not load image from URL"
             }), 200
 
-        # Detect timeframe from image
-        print(f"🚨 ANALYZE-TECHNICAL: 🔍 Detecting timeframe from image...")
-        timeframe, detection_error = detect_timeframe_from_image(image_str, image_format)
-        print(f"🚨 ANALYZE-TECHNICAL: 🔍 Timeframe detection result: {timeframe}, Error: {detection_error}")
+        # Detect investing.com frame first
+        print(f"🚨 ANALYZE-TECHNICAL: 🔍 Detecting frame type...")
+        frame_type, detected_timeframe = detect_investing_frame(image_str, image_format)
+        print(f"🚨 ANALYZE-TECHNICAL: 🔍 Frame type: {frame_type}, Timeframe: {detected_timeframe}")
 
-        if detection_error:
-            return jsonify({
-                "success": False,
-                "error": detection_error
-            }), 200
+        # If not investing.com frame, use standard detection
+        if frame_type == "unknown":
+            print(f"🚨 ANALYZE-TECHNICAL: 🔍 Detecting timeframe from image...")
+            detected_timeframe, detection_error = detect_timeframe_from_image(image_str, image_format)
+            print(f"🚨 ANALYZE-TECHNICAL: 🔍 Timeframe detection result: {detected_timeframe}, Error: {detection_error}")
+
+            if detection_error:
+                return jsonify({
+                    "success": False,
+                    "error": detection_error
+                }), 200
 
         # Detect currency from image
         print(f"🪙 ANALYZE-TECHNICAL: Detecting currency from image...")
         detected_currency, currency_error = detect_currency_from_image(image_str, image_format)
         print(f"🪙 ANALYZE-TECHNICAL: Currency detected: {detected_currency}")
 
-        print(f"🚨 ANALYZE-TECHNICAL: ✅ Timeframe detected: {timeframe}")
+        print(f"🚨 ANALYZE-TECHNICAL: ✅ Timeframe detected: {detected_timeframe}")
 
         # Analyze technical chart only with currency info
-        print(f"🚨 ANALYZE-TECHNICAL: 🧠 Starting technical analysis with timeframe: {timeframe}")
+        print(f"🚨 ANALYZE-TECHNICAL: 🧠 Starting technical analysis with timeframe: {detected_timeframe}")
 
         analysis = analyze_technical_chart(
             image_str=image_str,
             image_format=image_format,
-            timeframe=timeframe,
+            timeframe=detected_timeframe,
             currency_pair=detected_currency
         )
 
@@ -663,8 +679,9 @@ def analyze_technical():
         response_data = {
             "success": True,
             "analysis": analysis,
-            "detected_timeframe": timeframe,
+            "detected_timeframe": detected_timeframe,
             "detected_currency": detected_currency,
+            "frame_type": frame_type,
             "type": "technical_analysis"
         }
 
