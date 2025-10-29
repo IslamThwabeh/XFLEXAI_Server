@@ -202,7 +202,7 @@ def shorten_analysis_text(analysis_text, char_limit=1024, timeframe=None, curren
 def init_openai():
     """
     Initialize OpenAI client and test model availability.
-[O    Sets OPENAI_AVAILABLE, client, openai_error_message, openai_last_check.
+    Sets OPENAI_AVAILABLE, client, openai_error_message, openai_last_check.
     """
     global OPENAI_AVAILABLE, client, openai_error_message, openai_last_check
 
@@ -322,7 +322,7 @@ def detect_investing_frame(image_str, image_format):
                     "content": [
                         {
                             "type": "text",
-[I                            "text": "Analyze this chart image for investing.com signatures and detect the timeframe. Return ONLY in format: 'frame_type,timeframe'"
+                            "text": "Analyze this chart image for investing.com signatures and detect the timeframe. Return ONLY in format: 'frame_type,timeframe'"
                         },
                         {
                             "type": "image_url",
