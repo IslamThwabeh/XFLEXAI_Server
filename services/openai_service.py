@@ -62,7 +62,7 @@ def shorten_analysis_text(analysis_text, char_limit=1024, timeframe=None, curren
     Enhanced shortening that preserves critical information in ARABIC
     """
     global client
-    
+
     if len(analysis_text) <= char_limit:
         return analysis_text
 
@@ -107,7 +107,7 @@ def shorten_analysis_text(analysis_text, char_limit=1024, timeframe=None, curren
             model="gpt-4o",
             messages=[
                 {
-                    "role": "system", 
+                    "role": "system",
                     "content": "أنت مختصر لتحليلات التداول. مهمتك الوحيدة هي تقصير التحليل مع الحفاظ على جميع توصيات التداول، مستويات الأسعار، وقف الخسارة، جني الأرباح، ومعلومات الإطار الزمني. كن موجزا جدا وحافظ على اللغة العربية."
                 },
                 {
@@ -120,23 +120,23 @@ def shorten_analysis_text(analysis_text, char_limit=1024, timeframe=None, curren
         )
 
         shortened = response.choices[0].message.content.strip()
-        
+
         print(f"📏 SHORTENING: Original: {len(analysis_text)} chars -> Shortened: {len(shortened)} chars")
-        
+
         # Enhanced fallback truncation that preserves recommendations
         if len(shortened) > char_limit:
             print(f"📏 SHORTENING: ⚠️ Still too long after OpenAI shortening, using smart truncation")
-            
+
             # Try to find the recommendations section and preserve it
             recommendation_keywords = ['دخول', 'شراء', 'بيع', 'وقف', 'هدف', 'توصية', 'entry', 'buy', 'sell', 'stop loss', 'target']
-            
+
             # Look for the last occurrence of recommendations
             last_rec_index = -1
             for keyword in recommendation_keywords:
                 idx = analysis_text.lower().rfind(keyword)
                 if idx > last_rec_index:
                     last_rec_index = idx
-            
+
             if last_rec_index > char_limit * 0.6:  # If recommendations are in the second half
                 # Keep the end part with recommendations
                 start_index = max(0, last_rec_index - 200)  # Include some context before recommendations
@@ -146,13 +146,13 @@ def shorten_analysis_text(analysis_text, char_limit=1024, timeframe=None, curren
                 truncated = analysis_text[:char_limit-3]
                 last_period = truncated.rfind('.')
                 last_newline = truncated.rfind('\n')
-                
+
                 cutoff_point = max(last_period, last_newline)
                 if cutoff_point > char_limit * 0.7:  # Only use if we have reasonable text
                     shortened = truncated[:cutoff_point+1] + ".."
                 else:
                     shortened = truncated + "..."
-        
+
         # Ensure we have timeframe and currency information in Arabic
         final_text = shortened
         if timeframe and timeframe not in final_text:
@@ -161,7 +161,7 @@ def shorten_analysis_text(analysis_text, char_limit=1024, timeframe=None, curren
             if currency and currency != 'UNKNOWN':
                 timeframe_prefix += f" | العملة: {currency}"
             timeframe_prefix += "\n\n"
-            
+
             # Check if we have room for the prefix
             if len(timeframe_prefix + final_text) <= char_limit:
                 final_text = timeframe_prefix + final_text
@@ -170,7 +170,7 @@ def shorten_analysis_text(analysis_text, char_limit=1024, timeframe=None, curren
                 space_needed = len(timeframe_prefix)
                 final_text = final_text[:char_limit - space_needed - 3] + "..."
                 final_text = timeframe_prefix + final_text
-        
+
         print(f"📏 SHORTENING: ✅ Final length: {len(final_text)} chars")
         return final_text
 
@@ -178,24 +178,24 @@ def shorten_analysis_text(analysis_text, char_limit=1024, timeframe=None, curren
         print(f"📏 SHORTENING: ❌ Error shortening analysis: {str(e)}")
         # Enhanced fallback: preserve recommendations in truncation
         truncated = analysis_text[:char_limit-3]
-        
+
         # Try to end at a reasonable point
         for punctuation in ['.', '\n', ';']:
             last_pos = truncated.rfind(punctuation)
             if last_pos > char_limit * 0.8:
                 truncated = truncated[:last_pos+1]
                 break
-                
+
         # Add timeframe info if available
         if timeframe:
             timeframe_info = f"📊 الإطار: {timeframe}"
             if currency and currency != 'UNKNOWN':
                 timeframe_info += f" | {currency}"
             truncated = timeframe_info + "\n" + truncated
-        
+
         if len(truncated) > char_limit:
             truncated = truncated[:char_limit-3] + "..."
-            
+
         print(f"📏 SHORTENING: 🛟 Using enhanced fallback truncation: {len(truncated)} chars")
         return truncated
 
@@ -216,7 +216,7 @@ def init_openai():
         api_key = Config.OPENAI_API_KEY
         print(f"🚨 OPENAI INIT: Config.OPENAI_API_KEY = {api_key[:20]}..." if api_key else "🚨 OPENAI INIT: Config.OPENAI_API_KEY = None")
         print(f"🚨 OPENAI INIT: API Key exists: {bool(api_key)}")
-        print(f"🚨 OPENAI INIT: API Key length: {len(api_key) if api_key else 0}")
+[O        print(f"🚨 OPENAI INIT: API Key length: {len(api_key) if api_key else 0}")
 
         if not api_key or api_key == "your-api-key-here":
             openai_error_message = "OpenAI API key not configured"
@@ -275,16 +275,18 @@ def init_openai():
 
 def detect_investing_frame(image_str, image_format):
     """
-    Enhanced frame detection for investing.com frames
+    Enhanced frame detection for multiple platforms including trading.com mobile app
     Returns: (frame_type, timeframe)
     """
     try:
-        print("🔄 INVESTING FRAME DETECTION: Detecting investing.com frame...")
+        print("🔄 ENHANCED FRAME DETECTION: Detecting frame type...")
 
         system_prompt = """
-        You are a professional trading chart analyzer. Your task is to detect if this is an investing.com chart frame and identify the timeframe.
+        You are a professional trading chart analyzer. Your task is to detect the trading platform frame and identify the timeframe.
 
-        **INVESTING.COM SIGNATURES TO LOOK FOR:**
+        **PLATFORM SIGNATURES TO LOOK FOR:**
+
+        **INVESTING.COM SIGNATURES:**
         - "Investing" text anywhere
         - "powered by TradingView" 
         - "NASDAQ", "NYSE", or other stock exchange names
@@ -292,22 +294,39 @@ def detect_investing_frame(image_str, image_format):
         - Volume displayed as "1.387M" format
         - Specific layout with time selection buttons
 
-        **TIMEFRAME DETECTION FOR INVESTING.COM:**
+        **TRADING.COM MOBILE APP SIGNATURES:**
+        - Mobile app layout with bottom navigation
+        - Bottom tabs: "Watchlist", "Chart", "Explore", "Community", "Menu"
+        - Top bar with asset name and price (e.g., "Bitcoin 112,042.86")
+        - Buy/Sell buttons visible
+        - Simple chart with EMA indicators
+        - Volume displayed as "Vol : BTC" format
+        - Time in top right corner (e.g., "6:32 PM")
+
+        **METATRADER SIGNATURES:**
+        - "MetaTrader" or "MT4" or "MT5" text
+        - Toolbar with technical indicators
+        - Multiple timeframes in top bar
+        - Standard MT4/MT5 layout
+
+        **TIMEFRAME DETECTION FOR ALL PLATFORMS:**
         - Look for timeframe indicators: "15", "30", "1H", "4H", "1D", "1W", "1M"
         - Check top areas where timeframe buttons are typically located
         - "15" typically means M15 (15 minutes)
         - "1H" means H1 (1 hour)
         - "4H" means H4 (4 hours)
+        - For mobile apps without explicit timeframe, infer from chart density
+        - If no explicit timeframe, look at x-axis time labels
 
         **CRITICAL INSTRUCTIONS:**
-        - If you see ANY investing.com signatures, return "investing" as frame type
+        - If you see ANY platform signatures, return the platform name as frame type
         - Detect the timeframe and return it in standard format (M15, H1, H4, etc.)
-        - If no investing.com signatures found, return "unknown" as frame type
         - If timeframe cannot be determined, return "UNKNOWN" for timeframe
+        - For trading.com mobile app, return "trading_app" as frame type
         - **NEVER return error messages or apologies**
 
         Return format: "frame_type,timeframe"
-        Example: "investing,M15" or "unknown,UNKNOWN"
+        Example: "investing,M15" or "trading_app,M15" or "metatrader,H1" or "unknown,UNKNOWN"
         """
 
         response = client.chat.completions.create(
@@ -322,7 +341,7 @@ def detect_investing_frame(image_str, image_format):
                     "content": [
                         {
                             "type": "text",
-                            "text": "Analyze this chart image for investing.com signatures and detect the timeframe. Return ONLY in format: 'frame_type,timeframe'"
+                            "text": "Analyze this chart image for platform signatures and detect the timeframe. Return ONLY in format: 'frame_type,timeframe'"
                         },
                         {
                             "type": "image_url",
@@ -339,7 +358,7 @@ def detect_investing_frame(image_str, image_format):
         )
 
         result = response.choices[0].message.content.strip()
-        print(f"🔄 RAW investing frame detection result: '{result}'")
+        print(f"🔄 RAW frame detection result: '{result}'")
 
         # Parse the result
         if ',' in result:
@@ -347,52 +366,52 @@ def detect_investing_frame(image_str, image_format):
             frame_type = frame_type.strip().lower()
             timeframe = timeframe.strip().upper()
             
-            # Handle "15" as M15 specifically for investing.com
+            # Handle "15" as M15 for all platforms
             if timeframe == '15':
                 timeframe = 'M15'
             
             # Validate frame_type
-            if frame_type not in ['investing', 'unknown']:
+            valid_frame_types = ['investing', 'trading_app', 'metatrader', 'unknown']
+            if frame_type not in valid_frame_types:
                 frame_type = 'unknown'
             
             print(f"🔄 PARSED: Frame type: '{frame_type}', Timeframe: '{timeframe}'")
             return frame_type, timeframe
         else:
-            print(f"🔄 ❌ Invalid format from investing frame detection: '{result}'")
+            print(f"🔄 ❌ Invalid format from frame detection: '{result}'")
             return "unknown", "UNKNOWN"
 
     except Exception as e:
-        print(f"ERROR: Investing frame detection failed: {str(e)}")
+        print(f"ERROR: Frame detection failed: {str(e)}")
         return "unknown", "UNKNOWN"
 
 def extract_investing_data(image_str, image_format):
     """
-    Extract data from investing.com frame format
+    Enhanced data extraction for multiple platforms
     Returns: dictionary with extracted data
     """
     try:
-        print("📊 INVESTING DATA EXTRACTION: Extracting data from investing.com frame...")
+        print("📊 ENHANCED DATA EXTRACTION: Extracting data from chart...")
 
         system_prompt = """
-        You are a professional trading data extractor. Your task is to extract key trading data from investing.com charts.
+        You are a professional trading data extractor. Your task is to extract key trading data from various trading platforms.
 
-        **DATA TO EXTRACT:**
+        **DATA TO EXTRACT FOR ALL PLATFORMS:**
         - Current price
-        - High (H) price
-        - Low (L) price  
-        - Close (C) price
-        - Open price if available
-        - Volume data (typically in M or K format like "1.387M")
-        - Currency pair or stock symbol
+        - Asset name (e.g., Bitcoin, EUR/USD, etc.)
+        - Buy/Sell prices if visible
+        - Volume data 
+        - Any visible indicators (EMA, RSI, etc.)
+        - High/Low prices if available
 
-        **INVESTING.COM SPECIFIC FORMATS:**
-        - Prices are often displayed as: "H463.61 L461.85 C461.98"
-        - Volume: "1.387M" (means 1.387 million)
-        - Company names and stock symbols
+        **PLATFORM-SPECIFIC FORMATS:**
+        - Investing.com: "H463.61 L461.85 C461.98", "1.387M" volume
+        - Trading.com mobile: "Bitcoin 112,042.86", "Vol : BTC", "BUY/SELL" buttons
+        - MetaTrader: Standard MT4/MT5 price displays
 
         **INSTRUCTIONS:**
         - Extract all available price data
-        - Convert volume from "1.387M" to numeric value (1387000)
+        - Convert volume to consistent format
         - Return data in structured format
         - If data not available, mark as None
 
@@ -411,7 +430,7 @@ def extract_investing_data(image_str, image_format):
                     "content": [
                         {
                             "type": "text",
-                            "text": "Extract all trading data from this investing.com chart. Return structured data."
+                            "text": "Extract all trading data from this chart. Return structured data."
                         },
                         {
                             "type": "image_url",
@@ -428,35 +447,43 @@ def extract_investing_data(image_str, image_format):
         )
 
         extracted_data_text = response.choices[0].message.content.strip()
-        print(f"📊 RAW investing data extraction: '{extracted_data_text}'")
+        print(f"📊 RAW data extraction: '{extracted_data_text}'")
 
-        # Parse the extracted data (this is a simplified version)
-        # In a real implementation, you would parse the JSON-like structure
+        # Enhanced parsing for different platforms
         data = {
             'current_price': None,
+            'asset_name': None,
+            'buy_price': None,
+            'sell_price': None,
+            'volume': None,
             'high': None,
             'low': None,
-            'close': None,
-            'volume': None,
-            'source': 'investing.com'
+            'indicators': [],
+            'source': 'unknown'
         }
 
-        # Simple parsing logic (enhance this based on actual response format)
-        if 'H' in extracted_data_text:
-            # Extract high price
-            pass
-        if 'L' in extracted_data_text:
-            # Extract low price
-            pass
-        if 'C' in extracted_data_text:
-            # Extract close price
-            pass
+        # Parse the extracted data (simplified - in practice you'd use regex or more sophisticated parsing)
+        if 'Bitcoin' in extracted_data_text:
+            data['asset_name'] = 'Bitcoin'
+            data['source'] = 'trading_app'
+        
+        # Extract numeric patterns for prices
+        import re
+        price_pattern = r'\d{1,3}(?:,\d{3})*(?:\.\d+)?'
+        prices = re.findall(price_pattern, extracted_data_text)
+        if prices:
+            # Use the largest number as likely current price for crypto
+            try:
+                numeric_prices = [float(p.replace(',', '')) for p in prices]
+                data['current_price'] = max(numeric_prices) if numeric_prices else None
+            except:
+                pass
 
         print(f"📊 EXTRACTED DATA: {data}")
         return data
 
     except Exception as e:
-        print(f"ERROR: Investing data extraction failed: {str(e)}")
+        print(f"ERROR: Data extraction failed: {str(e)}")
         return {}
 
 def detect_currency_from_image(image_str, image_format):
@@ -475,7 +502,7 @@ def detect_currency_from_image(image_str, image_format):
         **MAIN AREAS TO CHECK:**
         - Chart title/header (most common)
         - Top left corner
-        - Top right corner  
+        - Top right corner
         - Top center area
         - Chart legend or label
         - Any text displaying currency pairs
@@ -531,15 +558,15 @@ def detect_currency_from_image(image_str, image_format):
 
         # Clean and standardize the currency format
         cleaned_currency = detected_currency.replace(' ', '')
-        
+
         # Add slash if missing (e.g., EURUSD -> EUR/USD)
         if len(cleaned_currency) == 6 and '/' not in cleaned_currency:
             cleaned_currency = f"{cleaned_currency[:3]}/{cleaned_currency[3:]}"
-        
+
         # Handle gold specifically
         if 'XAU' in cleaned_currency or 'GOLD' in cleaned_currency:
             cleaned_currency = 'XAU/USD'
-        
+
         print(f"🪙 Cleaned currency: '{cleaned_currency}'")
 
         # Common currency pairs for validation
@@ -864,7 +891,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 - ركز على النقاط الأساسية
 
 **لا تضف عدد الأحرف في نهاية الرد.**
-"""
+[I"""
 
     elif action_type == "single_analysis":
         analysis_prompt = f"""
