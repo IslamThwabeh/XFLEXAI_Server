@@ -552,17 +552,17 @@ def analyze_single_image():
         currency_pair=detected_currency
         )
 
-		# Enhanced fallback for refusals or very short responses
-		if (analysis.startswith('❌') or
-			any(word in analysis.lower() for word in ['sorry', 'apology', 'اسف', 'اعتذر', 'لا استطيع', 'عذرًا']) or
-			len(analysis) < 100):  # Very short response likely indicates refusal
-			print(f"🚨 ANALYZE-SINGLE: ⚠️ Analysis refused or too short, using fallback")
-			analysis = analyze_simple_chart_fallback(
-				image_str=image_str,
-				image_format=image_format,
-				timeframe=detected_timeframe,
-				currency_pair=detected_currency
-			)
+# Enhanced fallback for refusals or very short responses
+if (analysis.startswith('❌') or
+    any(word in analysis.lower() for word in ['sorry', 'apology', 'اسف', 'اعتذر', 'لا استطيع', 'عذرًا']) or
+    len(analysis) < 100):  # Very short response likely indicates refusal
+    print(f"🚨 ANALYZE-SINGLE: ⚠️ Analysis refused or too short, using fallback")
+    analysis = analyze_simple_chart_fallback(
+        image_str=image_str,
+        image_format=image_format,
+        timeframe=detected_timeframe,
+        currency_pair=detected_currency
+    )
 
         # ✅ Check length and shorten if needed - UPDATED WITH TIMEFRAME AND CURRENCY
         if len(analysis) > 1024:
