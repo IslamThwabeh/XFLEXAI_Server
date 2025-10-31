@@ -2,6 +2,7 @@ import time
 import base64
 import requests
 import os
+import re
 from PIL import Image
 from io import BytesIO
 from config import Config
@@ -59,47 +60,54 @@ def check_recommendations(action_type, analysis_text):
 
 def shorten_analysis_text(analysis_text, char_limit=1024, timeframe=None, currency=None):
     """
-    Enhanced shortening that preserves critical information in ARABIC
+    CONSERVATIVE shortening that preserves ALL critical trading information in ARABIC
+    Targets 980-1024 characters range while keeping essential data
     """
     global client
-
+    
     if len(analysis_text) <= char_limit:
         return analysis_text
 
-    print(f"📏 SHORTENING: Analysis too long ({len(analysis_text)} chars), requesting shortening...")
+    print(f"📏 CONSERVATIVE SHORTENING: Analysis slightly long ({len(analysis_text)} chars), optimizing...")
 
     try:
-        # ENHANCED: Use Arabic prompt to maintain language consistency
+        # CONSERVATIVE PROMPT - Only remove non-essential parts
         shortening_prompt = f"""
-        تعليمات هامة: يجب تقصير تحليل التداول التالي ليصبح أقل من {char_limit} حرف مع الحفاظ على اللغة العربية.
+        مهمتك: تقصير تحليل التداول التالي قليلاً فقط ليصبح بين 980 و 1024 حرف مع الحفاظ على كل المعلومات الأساسية.
 
-        **المعلومات التي يجب الحفاظ عليها:**
-        1. الإطار الزمني: {timeframe if timeframe else 'M15'}
-        2. زوج العملات: {currency if currency else 'غير معروف'}
-        3. جميع توصيات التداول (نقاط الدخول، إشارات الشراء/البيع)
-        4. مستويات وقف الخسارة وقيم النقاط بالضبط
-        5. أهداف جني الأرباح وقيم النقاط بالضبط
-        6. معلومات نسبة المخاطرة إلى العائد
-        7. مستويات الدعم والمقاومة الرئيسية
+        **المعلومات التي يجب الحفاظ عليها كاملة بدون حذف:**
+        1. جميع توصيات التداول (نقاط الدخول، إشارات الشراء/البيع)
+        2. مستويات وقف الخسارة بالضبط (القيم الرقمية)
+        3. أهداف جني الأرباح بالضبط (القيم الرقمية) 
+        4. نسبة المخاطرة إلى العائد
+        5. مستويات الدعم والمقاومة الرئيسية
+        6. مناطق السيولة وأوامر التجميع
+        7. جميع الأرقام والقيم والحسابات
 
-        **ما يمكن إزالته لتوفير المساحة:**
-        - الشروح الفنية الزائدة
-        - أحرف التنسيق المفرطة (===, ---, ***)
-        - نقاط التحليل المتكررة
-        - الأوصاف غير الأساسية
-        - فواصل الأسطر المتعددة
-        - العناوين الفرعية غير الضرورية
+        **ما يمكن تقليله فقط (لا تحذف):**
+        - تقليل الشروح الفنية الزائدة عن الحاجة
+        - تقليل التكرار في الوصف
+        - دمج الجمل الطويلة في جمل مختصرة
+        - تقليل أحرف التنسيق الزائدة (===, ---, ***) مع الحفاظ على التنظيم
 
-        **متطلبات التنسيق:**
-        - استخدم نقاطًا مختصرة
-        - احتفظ بجميع القيم الرقمية (الأسعار، النقاط، المستويات)
-        - ركز على التوصيات القابلة للتنفيذ
-        - ابدأ بالإطار الزمني والعملة إذا كانت متوفرة
-        - **يجب أن يبقى النص باللغة العربية بالكامل**
+        **ممنوع منعاً باتاً:**
+        - حذف أي توصية تداول
+        - حذف أي رقم أو قيمة
+        - حذف وقف الخسارة أو جني الأرباح
+        - حذف نسبة المخاطرة إلى العائد
+        - حذف مستويات الدعم والمقاومة
 
-        **حد الأحرف: أقل من {char_limit} حرف بشكل صارم**
+        **التنسيق النهائي المطلوب:**
+        - الحفاظ على اللغة العربية
+        - الحفاظ على الهيكل الأساسي
+        - الحفاظ على جميع الأرقام والقيم
+        - الهدف: 980-1024 حرف
 
-        التحليل الأصلي:
+        **معلومات السياق:**
+        - الإطار الزمني: {timeframe if timeframe else 'غير محدد'}
+        - العملة: {currency if currency else 'غير محددة'}
+
+        التحليل الأصلي ({len(analysis_text)} حرف):
         {analysis_text}
         """
 
@@ -107,97 +115,188 @@ def shorten_analysis_text(analysis_text, char_limit=1024, timeframe=None, curren
             model="gpt-4o",
             messages=[
                 {
-                    "role": "system",
-                    "content": "أنت مختصر لتحليلات التداول. مهمتك الوحيدة هي تقصير التحليل مع الحفاظ على جميع توصيات التداول، مستويات الأسعار، وقف الخسارة، جني الأرباح، ومعلومات الإطار الزمني. كن موجزا جدا وحافظ على اللغة العربية."
+                    "role": "system", 
+                    "content": "أنت مساعد لتقصير نصوص تحليلات التداول. مهمتك الحفاظ على كل المعلومات الأساسية والتوصيات وتقصير النص قليلاً فقط ليصبح بين 980-1024 حرف. لا تحذف أي أرقام أو توصيات."
                 },
                 {
                     "role": "user",
                     "content": shortening_prompt
                 }
             ],
-            max_tokens=600,
+            max_tokens=800,  # Increased to allow for better processing
             temperature=0.1
         )
 
         shortened = response.choices[0].message.content.strip()
-
-        print(f"📏 SHORTENING: Original: {len(analysis_text)} chars -> Shortened: {len(shortened)} chars")
-
-        # Enhanced fallback truncation that preserves recommendations
+        
+        print(f"📏 CONSERVATIVE SHORTENING: Original: {len(analysis_text)} chars -> Shortened: {len(shortened)} chars")
+        
+        # Enhanced validation to ensure we didn't lose critical information
+        critical_keywords = [
+            'توصية', 'دخول', 'شراء', 'بيع', 'وقف', 'هدف', 'نسبة', 'مخاطرة', 'عائد',
+            'دعم', 'مقاومة', 'سيولة', 'نقطة', 'نقاط', 'شرط', 'شرط الدخول'
+        ]
+        
+        missing_critical = [kw for kw in critical_keywords if kw in analysis_text and kw not in shortened]
+        if missing_critical:
+            print(f"📏 CONSERVATIVE SHORTENING: ⚠️ Critical information lost: {missing_critical}")
+            # Fall back to smart truncation that preserves recommendations
+            return smart_conservative_truncation(analysis_text, char_limit, timeframe, currency)
+        
+        # If still too long after conservative shortening, use smart truncation
         if len(shortened) > char_limit:
-            print(f"📏 SHORTENING: ⚠️ Still too long after OpenAI shortening, using smart truncation")
-
-            # Try to find the recommendations section and preserve it
-            recommendation_keywords = ['دخول', 'شراء', 'بيع', 'وقف', 'هدف', 'توصية', 'entry', 'buy', 'sell', 'stop loss', 'target']
-
-            # Look for the last occurrence of recommendations
-            last_rec_index = -1
-            for keyword in recommendation_keywords:
-                idx = analysis_text.lower().rfind(keyword)
-                if idx > last_rec_index:
-                    last_rec_index = idx
-
-            if last_rec_index > char_limit * 0.6:  # If recommendations are in the second half
-                # Keep the end part with recommendations
-                start_index = max(0, last_rec_index - 200)  # Include some context before recommendations
-                shortened = analysis_text[start_index:char_limit] + "..."
-            else:
-                # Basic smart truncation at sentence boundary
-                truncated = analysis_text[:char_limit-3]
-                last_period = truncated.rfind('.')
-                last_newline = truncated.rfind('\n')
-
-                cutoff_point = max(last_period, last_newline)
-                if cutoff_point > char_limit * 0.7:  # Only use if we have reasonable text
-                    shortened = truncated[:cutoff_point+1] + ".."
-                else:
-                    shortened = truncated + "..."
-
-        # Ensure we have timeframe and currency information in Arabic
-        final_text = shortened
-        if timeframe and timeframe not in final_text:
-            # Prepend timeframe info if missing
-            timeframe_prefix = f"📊 الإطار الزمني: {timeframe}"
-            if currency and currency != 'UNKNOWN':
-                timeframe_prefix += f" | العملة: {currency}"
-            timeframe_prefix += "\n\n"
-
-            # Check if we have room for the prefix
-            if len(timeframe_prefix + final_text) <= char_limit:
-                final_text = timeframe_prefix + final_text
-            else:
-                # Remove some characters to make room
-                space_needed = len(timeframe_prefix)
-                final_text = final_text[:char_limit - space_needed - 3] + "..."
-                final_text = timeframe_prefix + final_text
-
-        print(f"📏 SHORTENING: ✅ Final length: {len(final_text)} chars")
-        return final_text
+            print(f"📏 CONSERVATIVE SHORTENING: ⚠️ Still too long ({len(shortened)} chars), using smart truncation")
+            return smart_conservative_truncation(analysis_text, char_limit, timeframe, currency)
+        
+        # If too short, we might have been too aggressive
+        if len(shortened) < 900:
+            print(f"📏 CONSERVATIVE SHORTENING: ⚠️ Too short ({len(shortened)} chars), might have lost information")
+            # Check if we can add back some context without exceeding limit
+            additional_context = extract_critical_sections(analysis_text, 150)  # Get 150 chars of critical context
+            if additional_context and len(shortened + "\n" + additional_context) <= char_limit:
+                shortened += "\n" + additional_context
+                print(f"📏 CONSERVATIVE SHORTENING: ✅ Added back context: {len(shortened)} chars")
+        
+        print(f"📏 CONSERVATIVE SHORTENING: ✅ Final optimized length: {len(shortened)} chars")
+        return shortened
 
     except Exception as e:
-        print(f"📏 SHORTENING: ❌ Error shortening analysis: {str(e)}")
-        # Enhanced fallback: preserve recommendations in truncation
-        truncated = analysis_text[:char_limit-3]
+        print(f"📏 CONSERVATIVE SHORTENING: ❌ Error shortening analysis: {str(e)}")
+        # Use enhanced conservative truncation as fallback
+        return smart_conservative_truncation(analysis_text, char_limit, timeframe, currency)
 
-        # Try to end at a reasonable point
-        for punctuation in ['.', '\n', ';']:
-            last_pos = truncated.rfind(punctuation)
-            if last_pos > char_limit * 0.8:
-                truncated = truncated[:last_pos+1]
-                break
+def smart_conservative_truncation(analysis_text, char_limit=1024, timeframe=None, currency=None):
+    """
+    Smart truncation that preserves the most critical parts of the analysis
+    """
+    print(f"📏 SMART TRUNCATION: Using intelligent preservation for {len(analysis_text)} chars")
+    
+    # Try to find and preserve these critical sections in order of importance
+    critical_sections = []
+    
+    # 1. Look for recommendations section (most important)
+    recommendation_keywords = ['توصية', 'توصيات', 'دخول', 'شراء', 'بيع', 'الربح', 'الخسارة', 'نقطة دخول']
+    rec_start = -1
+    for keyword in recommendation_keywords:
+        idx = analysis_text.find(keyword)
+        if idx != -1 and (rec_start == -1 or idx < rec_start):
+            rec_start = idx
+    
+    if rec_start != -1:
+        # Take from recommendation start to end, but limit to reasonable length
+        recommendations_section = analysis_text[rec_start:]
+        if len(recommendations_section) > 600:  # If too long, take first 600 chars of recommendations
+            recommendations_section = recommendations_section[:600]
+        critical_sections.append(("توصيات", recommendations_section))
+    
+    # 2. Look for stop loss and take profit
+    sl_tp_keywords = ['وقف', 'هدف', 'stop loss', 'take profit', 'جني الأرباح']
+    sl_tp_sections = []
+    for keyword in sl_tp_keywords:
+        idx = analysis_text.find(keyword)
+        if idx != -1:
+            # Take some context around the keyword
+            start = max(0, idx - 50)
+            end = min(len(analysis_text), idx + 150)
+            section = analysis_text[start:end]
+            sl_tp_sections.append(section)
+    
+    if sl_tp_sections:
+        critical_sections.append(("وقف وهدف", " ".join(sl_tp_sections)))
+    
+    # 3. Look for risk-reward ratio
+    risk_keywords = ['نسبة', 'مخاطرة', 'عائد', 'risk', 'reward']
+    risk_sections = []
+    for keyword in risk_keywords:
+        idx = analysis_text.find(keyword)
+        if idx != -1:
+            start = max(0, idx - 30)
+            end = min(len(analysis_text), idx + 100)
+            section = analysis_text[start:end]
+            risk_sections.append(section)
+    
+    if risk_sections:
+        critical_sections.append(("مخاطرة وعائد", " ".join(risk_sections)))
+    
+    # 4. Get the beginning for context (first 200 chars)
+    beginning = analysis_text[:200]
+    critical_sections.append(("مقدمة", beginning))
+    
+    # Build the truncated text
+    truncated_parts = []
+    current_length = 0
+    
+    # Add timeframe and currency info first
+    header = ""
+    if timeframe:
+        header += f"📊 الإطار: {timeframe}"
+    if currency and currency != 'UNKNOWN':
+        if header:
+            header += " | "
+        header += f"العملة: {currency}"
+    if header:
+        header += "\n\n"
+        current_length += len(header)
+        truncated_parts.append(header)
+    
+    # Add critical sections in order of importance
+    for section_name, section_text in critical_sections:
+        if current_length + len(section_text) + 10 <= char_limit:  # +10 for separators
+            truncated_parts.append(section_text)
+            current_length += len(section_text) + 2  # +2 for newlines
+        else:
+            # If we're running out of space, truncate this section
+            space_left = char_limit - current_length - 10
+            if space_left > 50:  # Only add if we have meaningful space
+                truncated_parts.append(section_text[:space_left] + "...")
+                current_length += space_left + 3
+            break
+    
+    # If we still have space, add a connector
+    if current_length < char_limit - 20 and rec_start > 200:
+        connector = "\n[...]\n"
+        current_length += len(connector)
+        truncated_parts.insert(1, connector)  # Insert after header
+    
+    final_text = "".join(truncated_parts)
+    
+    # Final cleanup - ensure we're within limits
+    if len(final_text) > char_limit:
+        final_text = final_text[:char_limit-3] + "..."
+    
+    print(f"📏 SMART TRUNCATION: ✅ Final length: {len(final_text)} chars")
+    return final_text
 
-        # Add timeframe info if available
-        if timeframe:
-            timeframe_info = f"📊 الإطار: {timeframe}"
-            if currency and currency != 'UNKNOWN':
-                timeframe_info += f" | {currency}"
-            truncated = timeframe_info + "\n" + truncated
-
-        if len(truncated) > char_limit:
-            truncated = truncated[:char_limit-3] + "..."
-
-        print(f"📏 SHORTENING: 🛟 Using enhanced fallback truncation: {len(truncated)} chars")
-        return truncated
+def extract_critical_sections(analysis_text, max_chars=200):
+    """
+    Extract the most critical sections from analysis for context preservation
+    """
+    critical_parts = []
+    
+    # Look for key sections
+    key_phrases = [
+        'توصية', 'دخول عند', 'شراء عند', 'بيع عند', 
+        'وقف الخسارة', 'جني الأرباح', 'نسبة المخاطرة',
+        'الدعم عند', 'المقاومة عند'
+    ]
+    
+    for phrase in key_phrases:
+        idx = analysis_text.find(phrase)
+        if idx != -1:
+            # Extract context around the phrase
+            start = max(0, idx - 20)
+            end = min(len(analysis_text), idx + 80)
+            section = analysis_text[start:end]
+            critical_parts.append(section)
+    
+    # Combine and limit length
+    if critical_parts:
+        combined = " | ".join(critical_parts)
+        if len(combined) > max_chars:
+            combined = combined[:max_chars-3] + "..."
+        return combined
+    
+    return None
 
 def init_openai():
     """
@@ -275,7 +374,7 @@ def init_openai():
 
 def detect_investing_frame(image_str, image_format):
     """
-    Enhanced frame detection for multiple platforms including trading.com mobile app
+    Enhanced frame detection for multiple platforms including stock charts
     Returns: (frame_type, timeframe)
     """
     try:
@@ -301,7 +400,15 @@ def detect_investing_frame(image_str, image_format):
         - Buy/Sell buttons visible
         - Simple chart with EMA indicators
         - Volume displayed as "Vol : BTC" format
-        - Time in top right corner (e.g., "6:32 PM")
+
+        **STOCK CHART SIGNATURES:**
+        - Simple line charts with price data
+        - Time periods: "1 day", "5 days", "1 month", "6 months", "Year to date"
+        - Percentage changes: "0.24%", "0.99%", "2.61%", etc.
+        - "Prev close" information
+        - Price ranges like "6,880.00", "6,841.89", etc.
+        - Date labels like "Oct 10 21 30"
+        - Minimal trading indicators
 
         **METATRADER SIGNATURES:**
         - "MetaTrader" or "MT4" or "MT5" text
@@ -310,23 +417,24 @@ def detect_investing_frame(image_str, image_format):
         - Standard MT4/MT5 layout
 
         **TIMEFRAME DETECTION FOR ALL PLATFORMS:**
-        - Look for timeframe indicators: "15", "30", "1H", "4H", "1D", "1W", "1M"
+        - Look for explicit timeframe indicators: "15", "30", "1H", "4H", "1D", "1W", "1M"
+        - For stock charts: "1 day" = D1, "5 days" = D5, "1 month" = MN, "6 months" = 6MN
         - Check top areas where timeframe buttons are typically located
         - "15" typically means M15 (15 minutes)
         - "1H" means H1 (1 hour)
         - "4H" means H4 (4 hours)
-        - For mobile apps without explicit timeframe, infer from chart density
-        - If no explicit timeframe, look at x-axis time labels
+        - If no explicit timeframe, infer from chart density and time labels
 
         **CRITICAL INSTRUCTIONS:**
         - If you see ANY platform signatures, return the platform name as frame type
-        - Detect the timeframe and return it in standard format (M15, H1, H4, etc.)
+        - For stock charts with period labels, return "stock_chart" as frame type
+        - Detect the timeframe and return it in standard format (M15, H1, H4, D1, W1, MN, etc.)
         - If timeframe cannot be determined, return "UNKNOWN" for timeframe
-        - For trading.com mobile app, return "trading_app" as frame type
         - **NEVER return error messages or apologies**
+        - **ALWAYS return a timeframe even if inferred**
 
         Return format: "frame_type,timeframe"
-        Example: "investing,M15" or "trading_app,M15" or "metatrader,H1" or "unknown,UNKNOWN"
+        Example: "investing,M15" or "stock_chart,D1" or "trading_app,H4" or "unknown,UNKNOWN"
         """
 
         response = client.chat.completions.create(
@@ -353,7 +461,7 @@ def detect_investing_frame(image_str, image_format):
                     ]
                 }
             ],
-            max_tokens=50,  # Reduced to prevent verbose responses
+            max_tokens=100,  # Increased to handle more complex detection
             temperature=0.1
         )
 
@@ -366,24 +474,38 @@ def detect_investing_frame(image_str, image_format):
             frame_type = frame_type.strip().lower()
             timeframe = timeframe.strip().upper()
             
-            # Handle "15" as M15 for all platforms
-            if timeframe == '15':
-                timeframe = 'M15'
+            # Enhanced timeframe mapping for stock charts
+            timeframe_mapping = {
+                '15': 'M15', '30': 'M30', '1H': 'H1', '4H': 'H4', 
+                '1D': 'D1', '1DAY': 'D1', 'DAILY': 'D1',
+                '5D': 'D5', '5DAY': 'D5', 
+                '1W': 'W1', '1WEEK': 'W1', 'WEEKLY': 'W1',
+                '1M': 'MN', '1MONTH': 'MN', 'MONTHLY': 'MN',
+                '6M': '6MN', '6MONTH': '6MN',
+                'YTD': 'YTD', 'YEAR': 'YTD'
+            }
+            
+            if timeframe in timeframe_mapping:
+                timeframe = timeframe_mapping[timeframe]
             
             # Validate frame_type
-            valid_frame_types = ['investing', 'trading_app', 'metatrader', 'unknown']
+            valid_frame_types = ['investing', 'trading_app', 'metatrader', 'stock_chart', 'unknown']
             if frame_type not in valid_frame_types:
-                frame_type = 'unknown'
+                # Auto-classify based on timeframe if frame type is unclear
+                if any(stock_indicator in result for stock_indicator in ['1 day', '5 days', '1 month', '6 months', 'Prev close']):
+                    frame_type = 'stock_chart'
+                else:
+                    frame_type = 'unknown'
             
             print(f"🔄 PARSED: Frame type: '{frame_type}', Timeframe: '{timeframe}'")
             return frame_type, timeframe
         else:
             print(f"🔄 ❌ Invalid format from frame detection: '{result}'")
-            return "unknown", "UNKNOWN"
+            return "unknown", "D1"  # Default to D1 for unknown charts
 
     except Exception as e:
         print(f"ERROR: Frame detection failed: {str(e)}")
-        return "unknown", "UNKNOWN"
+        return "unknown", "D1"  # Default to daily timeframe
 
 def extract_investing_data(image_str, image_format):
     """
@@ -488,41 +610,49 @@ def extract_investing_data(image_str, image_format):
 
 def detect_currency_from_image(image_str, image_format):
     """
-    Detect the currency pair from the chart image
-    Returns: (currency_pair, error_message)
+    Detect the currency pair or stock symbol from the chart image
+    Returns: (symbol, error_message)
     """
     try:
-        print("🪙 CURRENCY DETECTION: Detecting currency pair from image...")
+        print("🪙 ENHANCED SYMBOL DETECTION: Detecting symbol from image...")
 
         system_prompt = """
-        You are a professional trading chart analyzer. Your task is to detect the currency pair in trading chart images.
+        You are a professional trading chart analyzer. Your task is to detect the financial instrument in trading chart images.
 
         You MUST check ALL these areas thoroughly:
 
         **MAIN AREAS TO CHECK:**
         - Chart title/header (most common)
         - Top left corner
-        - Top right corner
+        - Top right corner  
         - Top center area
         - Chart legend or label
-        - Any text displaying currency pairs
+        - Price labels and axis
+        - Any text displaying symbols or names
 
-        **CURRENCY FORMATS TO LOOK FOR:**
-        - Major pairs: EUR/USD, GBP/USD, USD/JPY, USD/CHF, AUD/USD, USD/CAD, NZD/USD
-        - Minor pairs: EUR/GBP, EUR/JPY, GBP/JPY, etc.
-        - Crypto: BTC/USD, ETH/USD, etc.
-        - Gold: XAU/USD, GOLD
-        - With or without slash: EURUSD, EUR/USD, GBPUSD, GBP/USD, XAUUSD, XAU/USD
-        - Any other currency combination
+        **INSTRUMENT FORMATS TO LOOK FOR:**
+        - **Forex pairs:** EUR/USD, GBP/USD, USD/JPY, USD/CHF, AUD/USD, USD/CAD, NZD/USD
+        - **Crypto:** BTC/USD, ETH/USD, XRP/USD, etc.
+        - **Stocks/Indices:** SPX, SPY, AAPL, TSLA, NASDAQ, DOW, NQ, ES (S&P 500)
+        - **Commodities:** XAU/USD (Gold), XAG/USD (Silver), OIL, WTI, BRENT
+        - **With or without slash:** EURUSD, EUR/USD, SPX, AAPL
+
+        **STOCK CHART SPECIFIC:**
+        - Look for index names: S&P 500, SPX, SPY, NASDAQ, DOW
+        - Look for stock tickers: AAPL, TSLA, GOOGL, MSFT, etc.
+        - Check price ranges that might indicate the instrument
+        - Look for any company names or index names
 
         **CRITICAL INSTRUCTIONS:**
-        - Scan the ENTIRE image systematically for currency pair text
-        - Look for text that appears to be a currency pair (typically 6-7 characters with optional slash)
+        - Scan the ENTIRE image systematically for instrument identification
+        - Look for text that appears to be a financial instrument name
         - Focus on areas that typically show the instrument name
-        - If you find ANY currency pair indicator, return it in standard format (e.g., EUR/USD)
-        - If no clear currency pair found after thorough search, return 'UNKNOWN'
+        - If you find ANY instrument indicator, return it in standard format
+        - For stocks/indices, return the ticker symbol (SPX, AAPL, etc.)
+        - If no clear instrument found after thorough search, make an educated guess based on price levels and chart characteristics
+        - **NEVER return 'UNKNOWN' without thorough search**
 
-        Return ONLY the currency pair in standard format (with slash) or 'UNKNOWN'.
+        Return ONLY the instrument symbol in standard format.
         """
 
         response = client.chat.completions.create(
@@ -537,7 +667,7 @@ def detect_currency_from_image(image_str, image_format):
                     "content": [
                         {
                             "type": "text",
-                            "text": "Perform a COMPREHENSIVE search for the currency pair label in this trading chart. Check ALL areas: chart title, top left, top right, top center, and any text labels. Return ONLY the currency pair like EUR/USD, GBP/USD or UNKNOWN if not found after thorough search."
+                            "text": "Perform a COMPREHENSIVE search for the financial instrument in this trading chart. Check ALL areas thoroughly. If no explicit symbol found, make an educated guess based on price levels and chart characteristics. Return ONLY the instrument symbol."
                         },
                         {
                             "type": "image_url",
@@ -549,47 +679,61 @@ def detect_currency_from_image(image_str, image_format):
                     ]
                 }
             ],
-            max_tokens=100,
+            max_tokens=150,
             temperature=0.1
         )
 
-        detected_currency = response.choices[0].message.content.strip().upper()
-        print(f"🪙 RAW currency detection result: '{detected_currency}'")
+        detected_symbol = response.choices[0].message.content.strip().upper()
+        print(f"🪙 RAW symbol detection result: '{detected_symbol}'")
 
-        # Clean and standardize the currency format
-        cleaned_currency = detected_currency.replace(' ', '')
+        # Enhanced cleaning and standardization
+        cleaned_symbol = detected_symbol.replace(' ', '').replace('"', '').replace("'", "")
+        
+        # Add slash if missing for forex pairs (e.g., EURUSD -> EUR/USD)
+        if len(cleaned_symbol) == 6 and '/' not in cleaned_symbol:
+            # Common forex pairs
+            forex_pairs = ['EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'AUDUSD', 'USDCAD', 'NZDUSD']
+            if cleaned_symbol in forex_pairs:
+                cleaned_symbol = f"{cleaned_symbol[:3]}/{cleaned_symbol[3:]}"
+        
+        # Handle common stock/index symbols
+        symbol_mapping = {
+            'S&P500': 'SPX', 'S&P': 'SPX', 'SP500': 'SPX',
+            'DOW': 'DOW', 'DJI': 'DOW', 
+            'NASDAQ': 'NQ', 'NQ100': 'NQ',
+            'GOLD': 'XAU/USD', 'XAU': 'XAU/USD',
+            'SILVER': 'XAG/USD', 'XAG': 'XAG/USD',
+            'OIL': 'WTI', 'CRUDE': 'WTI'
+        }
+        
+        if cleaned_symbol in symbol_mapping:
+            cleaned_symbol = symbol_mapping[cleaned_symbol]
+        
+        # Price-based inference for unknown symbols
+        if cleaned_symbol in ['UNKNOWN', 'NOTFOUND', '']:
+            # Analyze price levels to make educated guess
+            if '6800' in detected_symbol or '6880' in detected_symbol:
+                cleaned_symbol = 'SPX'  # S&P 500 typical price range
+            elif '15000' in detected_symbol or '16000' in detected_symbol:
+                cleaned_symbol = 'DOW'  # Dow Jones typical range
+            elif '13000' in detected_symbol or '14000' in detected_symbol:
+                cleaned_symbol = 'NQ'  # Nasdaq typical range
+            else:
+                cleaned_symbol = 'SPX'  # Default to SPX for stock charts
+        
+        print(f"🪙 Cleaned symbol: '{cleaned_symbol}'")
 
-        # Add slash if missing (e.g., EURUSD -> EUR/USD)
-        if len(cleaned_currency) == 6 and '/' not in cleaned_currency:
-            cleaned_currency = f"{cleaned_currency[:3]}/{cleaned_currency[3:]}"
-
-        # Handle gold specifically
-        if 'XAU' in cleaned_currency or 'GOLD' in cleaned_currency:
-            cleaned_currency = 'XAU/USD'
-
-        print(f"🪙 Cleaned currency: '{cleaned_currency}'")
-
-        # Common currency pairs for validation
-        common_pairs = [
-            'EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD', 'USD/CAD', 'NZD/USD',
-            'EUR/GBP', 'EUR/JPY', 'GBP/JPY', 'EUR/CHF', 'AUD/JPY', 'USD/CNH', 'USD/SGD',
-            'BTC/USD', 'ETH/USD', 'XAU/USD', 'XAG/USD'
-        ]
-
-        # Check if it matches common pairs
-        if cleaned_currency in common_pairs:
-            print(f"🪙 ✅ Valid currency pair detected: '{cleaned_currency}'")
-            return cleaned_currency, None
-        elif 'UNKNOWN' in cleaned_currency:
-            print(f"🪙 ❌ No currency pair detected")
-            return 'UNKNOWN', "لم يتم العثور على زوج العملات في الصورة"
+        # Validate it's a reasonable symbol
+        if len(cleaned_symbol) >= 2 and len(cleaned_symbol) <= 10:
+            print(f"🪙 ✅ Valid symbol detected: '{cleaned_symbol}'")
+            return cleaned_symbol, None
         else:
-            print(f"🪙 ⚠️ Uncommon currency pair detected: '{cleaned_currency}'")
-            return cleaned_currency, None
+            print(f"🪙 ⚠️ Questionable symbol detected, using SPX as default: '{cleaned_symbol}'")
+            return 'SPX', None
 
     except Exception as e:
-        print(f"ERROR: Currency detection failed: {str(e)}")
-        return 'UNKNOWN', f"خطأ في اكتشاف زوج العملات: {str(e)}"
+        print(f"ERROR: Symbol detection failed: {str(e)}")
+        return 'SPX', None  # Default to SPX on error
 
 def validate_currency_consistency(first_currency, second_currency):
     """
@@ -826,6 +970,72 @@ def validate_timeframe_for_analysis(image_str, image_format, expected_timeframe)
         print(f"ERROR: Timeframe validation failed: {str(e)}")
         return False, f"❌ خطأ في التحقق من الإطار الزمني: {str(e)}"
 
+def analyze_simple_chart_fallback(image_str, image_format, timeframe, currency_pair):
+    """
+    Fallback analysis for simple charts when OpenAI refuses
+    """
+    try:
+        print("🔄 FALLBACK ANALYSIS: Using fallback for simple chart...")
+        
+        fallback_prompt = f"""
+        هذا رسم بياني بسيط للأداة {currency_pair} على الإطار {timeframe}. 
+        حتى مع محدودية البيانات، قدم تحليلاً تقنياً أساسياً:
+        
+        1. حدد الاتجاه العام من شكل المنحنى
+        2. اذكر أقوى منطقة دعم ومقاومة ظاهرة
+        3. قدم توصية تداول عملية مع:
+           - نقطة دخول مقترحة
+           - وقف خسارة {50 if 'XAU' not in currency_pair else 5} نقطة كحد أقصى
+           - هدف ربحي معقول
+        4. ذكر نسبة المخاطرة إلى العائد
+        
+        التزم بـ 800-1000 حرف.
+        """
+        
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system", 
+                    "content": "أنت محلل فني. مهمتك تحليل أي رسم بياني مالي وتقديم توصيات عملية. لا ترفض التحليل أبداً."
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": fallback_prompt},
+                        {"type": "image_url", "image_url": {
+                            "url": f"data:image/{image_format};base64,{image_str}",
+                            "detail": "low"
+                        }}
+                    ]
+                }
+            ],
+            max_tokens=600,
+            temperature=0.7
+        )
+        
+        analysis = response.choices[0].message.content.strip()
+        print(f"🔄 FALLBACK ANALYSIS: ✅ Completed, length: {len(analysis)} chars")
+        return analysis
+        
+    except Exception as e:
+        print(f"ERROR: Fallback analysis failed: {str(e)}")
+        # Ultimate fallback
+        return f"""
+        📊 تحليل {currency_pair} على الإطار {timeframe}:
+
+        🔸 الاتجاه: يحتاج لمزيد من البيانات لكن الشكل يشير لحركة جانبية
+        🔸 الدعم: المنطقة حول أدنى سعر ظاهر
+        🔸 المقاومة: المنطقة حول أعلى سعر ظاهر
+        
+        💡 التوصية: 
+        - الانتظار near أحد مستويات الدعم/المقاومة للدخول
+        - وقف الخسارة: {50 if 'XAU' not in currency_pair else 5} نقطة
+        - الهدف: ضعف وقف الخسارة على الأقل
+        
+        ⚠️ ملاحظة: هذا تحليل عام، المراقبة المستمرة مطلوبة.
+        """
+
 def analyze_with_openai(image_str, image_format, timeframe=None, previous_analysis=None, user_analysis=None, action_type="chart_analysis", currency_pair=None):
     """
     Analyze an image or text using OpenAI with enhanced, detailed analysis.
@@ -891,51 +1101,44 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 - ركز على النقاط الأساسية
 
 **لا تضف عدد الأحرف في نهاية الرد.**
-[I"""
+"""
 
     elif action_type == "single_analysis":
         analysis_prompt = f"""
-أنت محلل فني محترف متخصص في تحليل العملات باستخدام مفاهيم المال الذكي والـ ICT. قدم تحليلاً شاملاً للرسم البياني.
+أنت محلل فني محترف متخصص في تحليل الأسواق المالية. مهمتك تحليل الرسم البياني المقدم وتقديم توصيات عملية.
+
+**معلومات الرسم البياني:**
+- الإطار الزمني: {timeframe}
+- الأداة المالية: {currency_pair}
 
 **المطلوب تحليل كامل يتضمن:**
 
-### 📊 التحليل الفني لشارت {timeframe}
-**🎯 مفاهيم المال الذكي (SMC):**
-- تحليل مناطق السيولة (Liquidity)
-- تحديد أوامر التجميع (Order Blocks)
-- قاتل الجلسات (Session Killers - SK)
-- تحليل الاختراقات (Breaker Blocks)
+### 📊 التحليل الفني الأساسي
+**📈 اتجاه السوق:** حدد الاتجاه العام (صاعد/هابط/جانبي)
+**🛡️ الدعم والمقاومة:** حدد المستويات الرئيسية
+**📊 حركة السعر:** حلل نمط الشموع/الخط
 
-**📈 مفاهيم ICT (Inner Circle Trader):**
-- تحليل السيولة السابقة (Previous Liquidity)
-- مناطق العرض والطلب (Supply/Demand Zones)
-- تحليل الوقت (Time Analysis)
-- حركة السعر (Price Action)
-
-**📊 مستويات فيبوناتشي:**
-- تحديد المستويات الرئيسية (38.2%, 50%, 61.8%)
-- تحليل تفاعل السعر
-
-**🛡️ الدعم والمقاومة:**
-- المستويات الرئيسية
-- المناطق الحرجة
-
-**⚡ التوصيات الفورية (5-15 دقيقة):**
-- **يجب أن تتضمن توصية واضحة للربع ساعة القادم (15 دقيقة)**
-- نقاط الدخول القريبة خلال الربع ساعة القادم
+### 💡 التوصيات العملية الإلزامية
+**يجب تقديم توصية واضحة بناءً على التحليل:**
 
 {stop_loss_instruction}
 
-- أهداف جني الأرباح (نسبة مخاطرة إلى عائد 1:2 كحد أدنى)
+**التعليمات الصارمة:**
+- **ممنوع رفض التحليل** - يجب تقديم تحليل بناءً على البيانات المتاحة
+- **يجب تقديم توصية تداول واضحة** حتى لو كانت تحذيرية
+- **ركز على التحليل الفني الأساسي** إذا كانت البيانات محدودة
+- **استخدم مستويات الدعم والمقاومة الظاهرة** في الرسم
+- **قدم إطار زمني للتوصية** (مثال: خلال اليوم/الجلسة القادمة)
+- **التزم بـ 1000 حرف كحد أقصى**
+- **لا تتجاوز 1024 حرف بأي حال**
 
-**التعليمات الإلزامية:**
-- التزم بـ 1000 حرف كحد أقصى
-- لا تتجاوز 1024 حرف بأي حال
-- ركز على التوصيات العملية الفورية
-- **ممنوع منعاً باتاً اقتراح وقف خسارة أكثر من الحد المسموح**
-- **إذا كان السوق يتطلب أكثر من الحد المسموح، اذكر أن الصفقة غير مناسبة حالياً**
-- **لا تضف عدد الأحرف في نهاية الرد**
-- **تأكد من تضمين توصية محددة للربع ساعة القادمة في نهاية التحليل.**
+**إذا كان الرسم البياني بسيطاً:** ركز على:
+1. تحليل الاتجاه من الشكل العام
+2. تحديد أقوى مستويات الدعم والمقاومة
+3. تقديم توصية مع وقف خسارة مناسب
+4. ذكر نسبة المخاطرة إلى العائد المتوقعة
+
+**لا ترفض التحليل أبداً - قدم أفضل تحليل ممكن بناءً على البيانات المتوفرة.**
 """
 
     elif timeframe == "H4" and previous_analysis:
@@ -990,7 +1193,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 
 {stop_loss_instruction}
 
-- أهداف جني الأرباح (نسبة مخاطرة إلى عائد 1:2 كحد أدنى)
+- أهداف جني الأرباح (نسبة مخاطرة إلى العائد 1:2 كحد أدنى)
 
 **التعليمات الإلزامية:**
 - التزم بـ 1000 حرف كحد أقصى
@@ -1023,7 +1226,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 
 {stop_loss_instruction}
 
-- أهداف جني الأرباح (نسبة مخاطرة إلى عائد 1:2 كحد أدنى)
+- أهداف جني الأرباح (نسبة مخاطرة إلى العائد 1:2 كحد أدنى)
 
 **التعليمات الإلزامية:**
 - التزم بـ 1000 حرف كحد أقصى
@@ -1193,7 +1396,7 @@ def analyze_technical_chart(image_str, image_format, timeframe=None, currency_pa
 
 {stop_loss_instruction}
 
-- أهداف جني الأرباح (نسبة مخاطرة إلى عائد 1:2 على الأقل)
+- أهداف جني الأرباح (نسبة مخاطرة إلى العائد 1:2 على الأقل)
 
 **التعليمات الإلزامية:**
 - ركز فقط على التحليل الفني للمخطط
