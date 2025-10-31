@@ -216,7 +216,7 @@ def init_openai():
         api_key = Config.OPENAI_API_KEY
         print(f"🚨 OPENAI INIT: Config.OPENAI_API_KEY = {api_key[:20]}..." if api_key else "🚨 OPENAI INIT: Config.OPENAI_API_KEY = None")
         print(f"🚨 OPENAI INIT: API Key exists: {bool(api_key)}")
-[O        print(f"🚨 OPENAI INIT: API Key length: {len(api_key) if api_key else 0}")
+        print(f"🚨 OPENAI INIT: API Key length: {len(api_key) if api_key else 0}")
 
         if not api_key or api_key == "your-api-key-here":
             openai_error_message = "OpenAI API key not configured"
