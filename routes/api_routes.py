@@ -12,7 +12,8 @@ from services.openai_service import (
     validate_currency_consistency,
     shorten_analysis_text,
     detect_investing_frame,
-    extract_investing_data
+    extract_investing_data,
+    analyze_simple_chart_fallback
 )
 
 from database.operations import get_user_by_telegram_id, redeem_registration_key
@@ -552,18 +553,16 @@ def analyze_single_image():
         )
 
         # Enhanced fallback for refusals or very short responses
-        if (analysis.startswith('❌') or 
+        if (analysis.startswith('❌') or
         any(word in analysis.lower() for word in ['sorry', 'apology', 'اسف', 'اعتذر', 'لا استطيع', 'عذرًا']) or
         len(analysis) < 100):  # Very short response likely indicates refusal
-    
         print(f"🚨 ANALYZE-SINGLE: ⚠️ Analysis refused or too short, using fallback")
         analysis = analyze_simple_chart_fallback(
         image_str=image_str,
         image_format=image_format,
         timeframe=detected_timeframe,
         currency_pair=detected_currency
-        )
-
+    )
         # ✅ Check length and shorten if needed - UPDATED WITH TIMEFRAME AND CURRENCY
         if len(analysis) > 1024:
             print(f"📏 LENGTH CHECK: Single analysis too long ({len(analysis)} chars), shortening...")
