@@ -17,18 +17,19 @@ from services.openai_service import (
 )
 
 from database.operations import get_user_by_telegram_id, redeem_registration_key
+from utils.decorators import subscription_required
 
-api_bp = Blueprint('api_bp', __name__)
+api_bp = Blueprint("api_bp", __name__)
 analysis_sessions = {}
 
-@api_bp.route('/')
+@api_bp.route("/")
 def home():
-    openai_available = current_app.config.get('OPENAI_AVAILABLE', False)
-    openai_error = current_app.config.get('OPENAI_ERROR_MESSAGE', 'Unknown error')
+    openai_available = current_app.config.get("OPENAI_AVAILABLE", False)
+    openai_error = current_app.config.get("OPENAI_ERROR_MESSAGE", "Unknown error")
     status = "✅" if openai_available else "❌"
-    return f"XFLEXAI Server is running {status} - OpenAI: {'Available' if openai_available else openai_error}"
+    return f"XFLEXAI Server is running {status} - OpenAI: {"Available" if openai_available else openai_error}"
 
-@api_bp.route('/redeem-key', methods=['POST'])
+@api_bp.route("/redeem-key", methods=["POST"])
 def redeem_key_route():
     """
     Endpoint to redeem a registration key.
@@ -36,19 +37,20 @@ def redeem_key_route():
     Returns success or error JSON with expiry_date on success.
     """
     data = request.get_json() or {}
-    telegram_user_id = data.get('telegram_user_id')
-    key_value = data.get('key')
+    telegram_user_id = data.get("telegram_user_id")
+    key_value = data.get("key")
 
     if not telegram_user_id or not key_value:
         return jsonify({"success": False, "error": "telegram_user_id and key are required"}), 400
 
     result = redeem_registration_key(key_value, telegram_user_id)
-    if not result.get('success'):
+    if not result.get("success"):
         return jsonify(result), 400
 
     return jsonify(result), 200
 
-@api_bp.route('/analyze', methods=['POST'])
+@api_bp.route("/analyze", methods=["POST"])
+@subscription_required
 def analyze():
     """
     SIMPLIFIED ANALYSIS ENDPOINT - handles all analysis types
@@ -80,63 +82,18 @@ def analyze():
             print(f"🚨 ANALYZE ENDPOINT: ❌ Returning error - No data: {error_response}")
             return jsonify(error_response), 400
 
-        telegram_user_id = data.get('telegram_user_id')
-        action_type = data.get('action_type', 'first_analysis')
-        image_url = data.get('image_url')
+        telegram_user_id = data.get("telegram_user_id")
+        action_type = data.get("action_type", "first_analysis")
+        image_url = data.get("image_url")
 
         print(f"🚨 ANALYZE ENDPOINT: 👤 Telegram ID: {telegram_user_id}")
         print(f"🚨 ANALYZE ENDPOINT: 🎯 Action Type: {action_type}")
         print(f"🚨 ANALYZE ENDPOINT: 🖼️ Image URL: {image_url}")
 
-        if not telegram_user_id:
-            error_response = {
-                "success": False,
-                "code": "missing_telegram_id",
-                "message": "Please include your telegram_user_id"
-            }
-            print(f"🚨 ANALYZE ENDPOINT: ❌ Returning error - Missing telegram ID: {error_response}")
-            return jsonify(error_response), 400
-
-        # Ensure telegram_user_id is numeric
-        try:
-            telegram_user_id = int(telegram_user_id)
-        except Exception:
-            error_response = {"success": False, "message": "Invalid telegram_user_id"}
-            print(f"🚨 ANALYZE ENDPOINT: ❌ Returning error - Invalid telegram ID: {error_response}")
-            return jsonify(error_response), 400
-
-        # Check user registration status
-        user = get_user_by_telegram_id(telegram_user_id)
-        if not user:
-            error_response = {
-                "success": False,
-                "code": "not_registered",
-                "message": "Your account is not registered. Please send your registration key using /redeem-key"
-            }
-            print(f"🚨 ANALYZE ENDPOINT: ❌ Returning error - User not registered: {error_response}")
-            return jsonify(error_response), 403
-
-        # Check expiry
-        expiry = user.get('expiry_date')
-        if expiry and isinstance(expiry, str):
-            try:
-                expiry = datetime.fromisoformat(expiry)
-            except Exception:
-                expiry = expiry
-
-        if expiry and datetime.utcnow() > expiry:
-            error_response = {
-                "success": False,
-                "code": "expired",
-                "message": "Your subscription has expired. Please renew or contact admin."
-            }
-            print(f"🚨 ANALYZE ENDPOINT: ❌ Returning error - Subscription expired: {error_response}")
-            return jsonify(error_response), 403
-
         # Check OpenAI availability using current_app.config
-        openai_available = current_app.config.get('OPENAI_AVAILABLE', False)
+        openai_available = current_app.config.get("OPENAI_AVAILABLE", False)
         if not openai_available:
-            openai_error = current_app.config.get('OPENAI_ERROR_MESSAGE', 'Unknown error')
+            openai_error = current_app.config.get("OPENAI_ERROR_MESSAGE", "Unknown error")
             error_response = {
                 "success": False,
                 "message": "خدمة الذكاء الاصطناعي غير متوفرة",
@@ -148,19 +105,19 @@ def analyze():
         # Initialize or get session
         if telegram_user_id not in analysis_sessions:
             analysis_sessions[telegram_user_id] = {
-                'first_analysis': None,
-                'second_analysis': None,
-                'first_timeframe': None,
-                'second_timeframe': None,
-                'first_currency': None,
-                'second_currency': None,
-                'user_analysis': None,
-                'status': 'ready'
+                "first_analysis": None,
+                "second_analysis": None,
+                "first_timeframe": None,
+                "second_timeframe": None,
+                "first_currency": None,
+                "second_currency": None,
+                "user_analysis": None,
+                "status": "ready"
             }
 
         session_data = analysis_sessions[telegram_user_id]
-        user_analysis_text = data.get('user_analysis')
-        timeframe = data.get('timeframe', 'M15')
+        user_analysis_text = data.get("user_analysis")
+        timeframe = data.get("timeframe", "M15")
 
         print(f"🚨 ANALYZE ENDPOINT: 💾 Session data: {session_data}")
 
@@ -172,7 +129,7 @@ def analyze():
             print(f"🚨 ANALYZE ENDPOINT: 🖼️ Image loaded - String: {bool(image_str)}, Format: {image_format}")
 
         # Handle different action types
-        if action_type == 'first_analysis':
+        if action_type == "first_analysis":
             if not image_str:
                 error_response = {
                     "success": False,
@@ -189,10 +146,10 @@ def analyze():
             print(f"🪙 ANALYZE ENDPOINT: First currency detected: {first_currency}")
             
             # Pass currency pair to analysis for proper stop loss rules
-            analysis = analyze_with_openai(image_str, image_format, timeframe, action_type='first_analysis', currency_pair=first_currency)
+            analysis = analyze_with_openai(image_str, image_format, timeframe, action_type="first_analysis", currency_pair=first_currency)
 
             # Check if analysis returned a validation error (starts with ❌)
-            if analysis.startswith('❌'):
+            if analysis.startswith("❌"):
                 error_response = {
                     "success": False,
                     "message": analysis,
@@ -208,10 +165,10 @@ def analyze():
                 analysis = shorten_analysis_text(analysis, timeframe=timeframe, currency=first_currency)
                 print(f"📏 LENGTH CHECK: After shortening: {len(analysis)} chars")
 
-            session_data['first_analysis'] = analysis
-            session_data['first_timeframe'] = timeframe
-            session_data['first_currency'] = first_currency
-            session_data['status'] = 'first_done'
+            session_data["first_analysis"] = analysis
+            session_data["first_timeframe"] = timeframe
+            session_data["first_currency"] = first_currency
+            session_data["status"] = "first_done"
 
             response_data = {
                 "success": True,
@@ -234,7 +191,7 @@ def analyze():
             print(f"🚨 ANALYZE ENDPOINT: ✅ First analysis completed - Response: {response_data}")
             return jsonify(response_data), 200
 
-        elif action_type == 'second_analysis':
+        elif action_type == "second_analysis":
             print(f"🚨 ANALYZE ENDPOINT: 🔄 Starting second analysis")
 
             if not image_str:
@@ -242,10 +199,9 @@ def analyze():
                     "success": False,
                     "message": "صورة غير صالحة"
                 }
-                print(f"🚨 ANALYZE ENDPOINT: ❌ Returning error - Invalid image: {error_response}")
                 return jsonify(error_response), 200
 
-            if session_data['status'] != 'first_done':
+            if session_data["status"] != "first_done":
                 error_response = {
                     "success": False,
                     "message": "يجب تحليل الإطار الأول قبل الثاني"
@@ -254,7 +210,7 @@ def analyze():
                 return jsonify(error_response), 200
 
             # Use H4 for second analysis
-            second_timeframe = 'H4'
+            second_timeframe = "H4"
             
             # Detect currency from second image
             print(f"🪙 ANALYZE ENDPOINT: Detecting currency from second image...")
@@ -262,7 +218,7 @@ def analyze():
             print(f"🪙 ANALYZE ENDPOINT: Second currency detected: {second_currency}")
             
             # Validate currency consistency
-            first_currency = session_data.get('first_currency')
+            first_currency = session_data.get("first_currency")
             if first_currency:
                 is_currency_valid, currency_error_msg = validate_currency_consistency(first_currency, second_currency)
                 if not is_currency_valid:
@@ -278,10 +234,10 @@ def analyze():
             print(f"🚨 ANALYZE ENDPOINT: 🧠 Starting second analysis with timeframe: {second_timeframe}")
             
             # Pass currency pair to analysis for proper stop loss rules
-            analysis = analyze_with_openai(image_str, image_format, second_timeframe, session_data['first_analysis'], action_type='second_analysis', currency_pair=second_currency)
+            analysis = analyze_with_openai(image_str, image_format, second_timeframe, session_data["first_analysis"], action_type="second_analysis", currency_pair=second_currency)
 
             # Check if analysis returned a validation error (starts with ❌)
-            if analysis.startswith('❌'):
+            if analysis.startswith("❌"):
                 error_response = {
                     "success": False,
                     "message": analysis,
@@ -297,18 +253,18 @@ def analyze():
                 analysis = shorten_analysis_text(analysis, timeframe=second_timeframe, currency=second_currency)
                 print(f"📏 LENGTH CHECK: After shortening: {len(analysis)} chars")
 
-            session_data['second_analysis'] = analysis
-            session_data['second_timeframe'] = second_timeframe
-            session_data['second_currency'] = second_currency
-            session_data['status'] = 'both_done'
+            session_data["second_analysis"] = analysis
+            session_data["second_timeframe"] = second_timeframe
+            session_data["second_currency"] = second_currency
+            session_data["status"] = "both_done"
 
             print(f"🚨 ANALYZE ENDPOINT: 🧠 Generating final combined analysis")
             # Generate final combined analysis with currency info
-            final_currency = second_currency or session_data.get('first_currency')
+            final_currency = second_currency or session_data.get("first_currency")
             final_analysis = analyze_with_openai(
                 None, None, "combined",
-                f"{session_data['first_timeframe']}: {session_data['first_analysis']}",
-                session_data['second_analysis'], "final_analysis",
+                f"{session_data["first_timeframe"]}: {session_data["first_analysis"]}",
+                session_data["second_analysis"], "final_analysis",
                 currency_pair=final_currency
             )
 
@@ -339,7 +295,7 @@ def analyze():
             print(f"🚨 ANALYZE ENDPOINT: ✅ Second analysis completed - Response: {response_data}")
             return jsonify(response_data), 200
 
-        elif action_type == 'user_analysis':
+        elif action_type == "user_analysis":
             print(f"🚨 ANALYZE ENDPOINT: 👤 Starting user analysis feedback")
 
             if not user_analysis_text:
@@ -360,8 +316,8 @@ def analyze():
                 feedback = shorten_analysis_text(feedback)
                 print(f"📏 LENGTH CHECK: After shortening: {len(feedback)} chars")
 
-            session_data['user_analysis'] = user_analysis_text
-            session_data['status'] = 'completed'
+            session_data["user_analysis"] = user_analysis_text
+            session_data["status"] = "completed"
 
             response_data = {
                 "success": True,
@@ -384,18 +340,18 @@ def analyze():
             print(f"🚨 ANALYZE ENDPOINT: ✅ User analysis completed - Response: {response_data}")
             return jsonify(response_data), 200
 
-        elif action_type == 'new_session':
+        elif action_type == "new_session":
             print(f"🚨 ANALYZE ENDPOINT: 🔄 Starting new session")
             # Reset session but keep conversation history if needed
             analysis_sessions[telegram_user_id] = {
-                'first_analysis': None,
-                'second_analysis': None,
-                'first_timeframe': None,
-                'second_timeframe': None,
-                'first_currency': None,
-                'second_currency': None,
-                'user_analysis': None,
-                'status': 'ready'
+                "first_analysis": None,
+                "second_analysis": None,
+                "first_timeframe": None,
+                "second_timeframe": None,
+                "first_currency": None,
+                "second_currency": None,
+                "user_analysis": None,
+                "status": "ready"
             }
 
             response_data = {
@@ -424,27 +380,27 @@ def analyze():
         print(f"🚨 ANALYZE ENDPOINT: ❌ Returning error: {error_response}")
         return jsonify(error_response), 400
 
-@api_bp.route('/status')
+@api_bp.route("/status")
 def status_route():
-    openai_available = current_app.config.get('OPENAI_AVAILABLE', False)
+    openai_available = current_app.config.get("OPENAI_AVAILABLE", False)
     return jsonify({
         "server": "running",
         "openai_available": openai_available,
         "active_sessions": len(analysis_sessions)
     })
 
-@api_bp.route('/session-info/<int:telegram_user_id>')
+@api_bp.route("/session-info/<int:telegram_user_id>")
 def session_info(telegram_user_id):
     if telegram_user_id in analysis_sessions:
         session_data = analysis_sessions[telegram_user_id].copy()
-        if 'conversation_history' in session_data:
-            session_data['conversation_count'] = len(session_data['conversation_history'])
-            del session_data['conversation_history']
+        if "conversation_history" in session_data:
+            session_data["conversation_count"] = len(session_data["conversation_history"])
+            del session_data["conversation_history"]
         return jsonify({"success": True, "session": session_data})
     else:
         return jsonify({"success": False, "message": "الجلسة غير موجودة"})
 
-@api_bp.route('/clear-sessions')
+@api_bp.route("/clear-sessions")
 def clear_sessions():
     global analysis_sessions
     count = len(analysis_sessions)
@@ -454,7 +410,8 @@ def clear_sessions():
         "status": "sessions_cleared"
     })
 
-@api_bp.route('/analyze-single', methods=['POST'])
+@api_bp.route("/analyze-single", methods=["POST"])
+@subscription_required
 def analyze_single_image():
     """
     Analyze a single image - automatically detect timeframe and provide enhanced analysis
@@ -474,7 +431,7 @@ def analyze_single_image():
                 "error": "No JSON data provided"
             }), 200
 
-        image_url = data.get('image_url')
+        image_url = data.get("image_url")
         print(f"🚨 ANALYZE-SINGLE: 🖼️ Image URL: {image_url}")
 
         if not image_url:
@@ -485,11 +442,11 @@ def analyze_single_image():
             }), 200
 
         # Check OpenAI availability
-        openai_available = current_app.config.get('OPENAI_AVAILABLE', False)
+        openai_available = current_app.config.get("OPENAI_AVAILABLE", False)
         print(f"🚨 ANALYZE-SINGLE: 🤖 OpenAI available: {openai_available}")
 
         if not openai_available:
-            openai_error = current_app.config.get('OPENAI_ERROR_MESSAGE', 'Unknown error')
+            openai_error = current_app.config.get("OPENAI_ERROR_MESSAGE", "Unknown error")
             print(f"🚨 ANALYZE-SINGLE: ❌ OpenAI unavailable: {openai_error}")
             return jsonify({
                 "success": False,
@@ -515,7 +472,7 @@ def analyze_single_image():
         print(f"🚨 ANALYZE-SINGLE: 🔍 Frame type: {frame_type}, Timeframe: {detected_timeframe}")
 
         # If investing.com detection returned an error message (starts with apology), treat as unknown
-        if frame_type and any(word in frame_type.lower() for word in ['sorry', 'apology', 'اسف', 'اعتذر']):
+        if frame_type and any(word in frame_type.lower() for word in ["sorry", "apology", "اسف", "اعتذر"]):
             print(f"🚨 ANALYZE-SINGLE: ⚠️ Investing detection returned error, treating as unknown")
             frame_type = "unknown"
             detected_timeframe = "UNKNOWN"
@@ -553,8 +510,8 @@ def analyze_single_image():
         )
 
         # Enhanced fallback for refusals or very short responses
-        if (analysis.startswith('❌') or 
-            any(word in analysis.lower() for word in ['sorry', 'apology', 'اسف', 'اعتذر', 'لا استطيع', 'عذرًا']) or
+        if (analysis.startswith("❌") or 
+            any(word in analysis.lower() for word in ["sorry", "apology", "اسف", "اعتذر", "لا استطيع", "عذرًا"]) or
             len(analysis) < 100):  # Very short response likely indicates refusal
             print(f"🚨 ANALYZE-SINGLE: ⚠️ Analysis refused or too short, using fallback")
             analysis = analyze_simple_chart_fallback(
@@ -603,7 +560,8 @@ def analyze_single_image():
             "error": f"Analysis failed: {str(e)}"
         }), 200
 
-@api_bp.route('/analyze-technical', methods=['POST'])
+@api_bp.route("/analyze-technical", methods=["POST"])
+@subscription_required
 def analyze_technical():
     """
     Analyze the chart for technical analysis only
@@ -621,7 +579,7 @@ def analyze_technical():
                 "error": "No JSON data provided"
             }), 200
 
-        image_url = data.get('image_url')
+        image_url = data.get("image_url")
         print(f"🚨 ANALYZE-TECHNICAL: 🖼️ Image URL: {image_url}")
 
         if not image_url:
@@ -631,11 +589,11 @@ def analyze_technical():
             }), 200
 
         # Check OpenAI availability
-        openai_available = current_app.config.get('OPENAI_AVAILABLE', False)
+        openai_available = current_app.config.get("OPENAI_AVAILABLE", False)
         print(f"🚨 ANALYZE-TECHNICAL: 🤖 OpenAI available: {openai_available}")
 
         if not openai_available:
-            openai_error = current_app.config.get('OPENAI_ERROR_MESSAGE', 'Unknown error')
+            openai_error = current_app.config.get("OPENAI_ERROR_MESSAGE", "Unknown error")
             return jsonify({
                 "success": False,
                 "error": "OpenAI service unavailable",
@@ -726,10 +684,11 @@ def analyze_technical():
             "error": f"Technical analysis failed: {str(e)}"
         }), 200
 
-@api_bp.route('/analyze-user-feedback', methods=['POST'])
+@api_bp.route("/analyze-user-feedback", methods=["POST"])
+@subscription_required
 def analyze_user_feedback():
     """
-    Analyze user's drawn analysis and provide feedback
+    Analyze user"s drawn analysis and provide feedback
     MAX 1024 CHARACTERS FOR SENDPULSE COMPATIBILITY
     """
     try:
@@ -744,7 +703,7 @@ def analyze_user_feedback():
                 "error": "No JSON data provided"
             }), 200
 
-        image_url = data.get('image_url')
+        image_url = data.get("image_url")
         print(f"🚨 ANALYZE-USER-FEEDBACK: 🖼️ Image URL: {image_url}")
 
         if not image_url:
@@ -754,11 +713,11 @@ def analyze_user_feedback():
             }), 200
 
         # Check OpenAI availability
-        openai_available = current_app.config.get('OPENAI_AVAILABLE', False)
+        openai_available = current_app.config.get("OPENAI_AVAILABLE", False)
         print(f"🚨 ANALYZE-USER-FEEDBACK: 🤖 OpenAI available: {openai_available}")
 
         if not openai_available:
-            openai_error = current_app.config.get('OPENAI_ERROR_MESSAGE', 'Unknown error')
+            openai_error = current_app.config.get("OPENAI_ERROR_MESSAGE", "Unknown error")
             return jsonify({
                 "success": False,
                 "error": "OpenAI service unavailable",
@@ -789,7 +748,7 @@ def analyze_user_feedback():
 
         print(f"🚨 ANALYZE-USER-FEEDBACK: ✅ Timeframe detected: {timeframe}")
 
-        # For user feedback, we don't need technical analysis context
+        # For user feedback, we don"t need technical analysis context
         print(f"🚨 ANALYZE-USER-FEEDBACK: 🧠 Starting user feedback analysis with timeframe: {timeframe}")
 
         feedback = analyze_user_drawn_feedback_simple(
@@ -836,7 +795,7 @@ def analyze_user_feedback():
         }), 200
 
 # Keep the old endpoint for backward compatibility
-@api_bp.route('/analyze-user-drawn', methods=['POST'])
+@api_bp.route("/analyze-user-drawn", methods=["POST"])
 def analyze_user_drawn():
     """
     Legacy endpoint - kept for backward compatibility
@@ -845,3 +804,4 @@ def analyze_user_drawn():
         "success": False,
         "error": "This endpoint is deprecated. Please use /analyze-technical and /analyze-user-feedback instead."
     }), 200
+
