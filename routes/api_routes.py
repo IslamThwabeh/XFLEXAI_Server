@@ -17,6 +17,7 @@ from services.openai_service import (
 )
 
 from database.operations import get_user_by_telegram_id, redeem_registration_key
+from utils.decorators import subscription_required
 
 api_bp = Blueprint('api_bp', __name__)
 analysis_sessions = {}
@@ -49,6 +50,7 @@ def redeem_key_route():
     return jsonify(result), 200
 
 @api_bp.route('/analyze', methods=['POST'])
+@subscription_required
 def analyze():
     """
     SIMPLIFIED ANALYSIS ENDPOINT - handles all analysis types
@@ -87,51 +89,6 @@ def analyze():
         print(f"🚨 ANALYZE ENDPOINT: 👤 Telegram ID: {telegram_user_id}")
         print(f"🚨 ANALYZE ENDPOINT: 🎯 Action Type: {action_type}")
         print(f"🚨 ANALYZE ENDPOINT: 🖼️ Image URL: {image_url}")
-
-        if not telegram_user_id:
-            error_response = {
-                "success": False,
-                "code": "missing_telegram_id",
-                "message": "Please include your telegram_user_id"
-            }
-            print(f"🚨 ANALYZE ENDPOINT: ❌ Returning error - Missing telegram ID: {error_response}")
-            return jsonify(error_response), 400
-
-        # Ensure telegram_user_id is numeric
-        try:
-            telegram_user_id = int(telegram_user_id)
-        except Exception:
-            error_response = {"success": False, "message": "Invalid telegram_user_id"}
-            print(f"🚨 ANALYZE ENDPOINT: ❌ Returning error - Invalid telegram ID: {error_response}")
-            return jsonify(error_response), 400
-
-        # Check user registration status
-        user = get_user_by_telegram_id(telegram_user_id)
-        if not user:
-            error_response = {
-                "success": False,
-                "code": "not_registered",
-                "message": "Your account is not registered. Please send your registration key using /redeem-key"
-            }
-            print(f"🚨 ANALYZE ENDPOINT: ❌ Returning error - User not registered: {error_response}")
-            return jsonify(error_response), 403
-
-        # Check expiry
-        expiry = user.get('expiry_date')
-        if expiry and isinstance(expiry, str):
-            try:
-                expiry = datetime.fromisoformat(expiry)
-            except Exception:
-                expiry = expiry
-
-        if expiry and datetime.utcnow() > expiry:
-            error_response = {
-                "success": False,
-                "code": "expired",
-                "message": "Your subscription has expired. Please renew or contact admin."
-            }
-            print(f"🚨 ANALYZE ENDPOINT: ❌ Returning error - Subscription expired: {error_response}")
-            return jsonify(error_response), 403
 
         # Check OpenAI availability using current_app.config
         openai_available = current_app.config.get('OPENAI_AVAILABLE', False)
@@ -242,7 +199,6 @@ def analyze():
                     "success": False,
                     "message": "صورة غير صالحة"
                 }
-                print(f"🚨 ANALYZE ENDPOINT: ❌ Returning error - Invalid image: {error_response}")
                 return jsonify(error_response), 200
 
             if session_data['status'] != 'first_done':
@@ -455,11 +411,14 @@ def clear_sessions():
     })
 
 @api_bp.route('/analyze-single', methods=['POST'])
+@subscription_required
 def analyze_single_image():
     """
     Analyze a single image - automatically detect timeframe and provide enhanced analysis
     Enhanced with SMC concepts and immediate recommendations
     MAX 1024 CHARACTERS FOR SENDPULSE COMPATIBILITY
+    
+    Expected JSON: { "telegram_user_id": 123456789, "image_url": "https://..." }
     """
     try:
         print(f"🚨 ANALYZE-SINGLE: 📥 Received request at {datetime.now()}")
@@ -604,10 +563,13 @@ def analyze_single_image():
         }), 200
 
 @api_bp.route('/analyze-technical', methods=['POST'])
+@subscription_required
 def analyze_technical():
     """
     Analyze the chart for technical analysis only
     MAX 1024 CHARACTERS FOR SENDPULSE COMPATIBILITY
+    
+    Expected JSON: { "telegram_user_id": 123456789, "image_url": "https://..." }
     """
     try:
         print(f"🚨 ANALYZE-TECHNICAL: 📥 Received request at {datetime.now()}")
@@ -727,10 +689,13 @@ def analyze_technical():
         }), 200
 
 @api_bp.route('/analyze-user-feedback', methods=['POST'])
+@subscription_required
 def analyze_user_feedback():
     """
     Analyze user's drawn analysis and provide feedback
     MAX 1024 CHARACTERS FOR SENDPULSE COMPATIBILITY
+    
+    Expected JSON: { "telegram_user_id": 123456789, "image_url": "https://..." }
     """
     try:
         print(f"🚨 ANALYZE-USER-FEEDBACK: 📥 Received request at {datetime.now()}")
@@ -845,3 +810,4 @@ def analyze_user_drawn():
         "success": False,
         "error": "This endpoint is deprecated. Please use /analyze-technical and /analyze-user-feedback instead."
     }), 200
+
