@@ -232,10 +232,23 @@ def redeem_registration_key(key_value, telegram_user_id):
             conn.rollback()
             return {"success": False, "error": "Key is not active"}
 
+        # If key is already used, check if it was used by the current user
         if rk.get('used'):
-            cur.close()
-            conn.rollback()
-            return {"success": False, "error": "Key already used"}
+            # Fetch the user who used this key
+            cur.execute("SELECT * FROM users WHERE id = %s", (rk.get('used_by'),))
+            existing_user = cur.fetchone()
+            
+            if existing_user and int(existing_user.get('telegram_user_id')) == int(telegram_user_id):
+                # Same user redeeming the same key again -> return success with current expiry
+                cur.close()
+                conn.rollback()
+                expiry_date = existing_user.get('expiry_date')
+                return {"success": True, "expiry_date": expiry_date.isoformat() if isinstance(expiry_date, datetime) else expiry_date, "user_id": existing_user.get('id'), "message": "Key already redeemed"}
+            else:
+                # Different user trying to use this key -> error
+                cur.close()
+                conn.rollback()
+                return {"success": False, "error": "Key already used by another user"}
 
         allowed = rk.get('allowed_telegram_user_id')
         if allowed and int(allowed) != int(telegram_user_id):
