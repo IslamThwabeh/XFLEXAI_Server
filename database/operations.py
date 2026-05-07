@@ -51,30 +51,47 @@ def init_database():
             WHERE NOT EXISTS (SELECT 1 FROM key_types WHERE name = v.name)
         """)
 
-        # Now add the FK constraints that reference the other table.
-        # Wrap each ALTER in try/except so init_database is idempotent and won't fail
-        # if the constraint already exists or if something else prevents adding it.
-        try:
-            cur.execute("""
+        conn.commit()
+        print("DEBUG: Core database tables and indexes created/ensured.")
+
+        def ensure_fk_constraint(constraint_name, alter_sql, success_message, exists_message):
+            cur.execute("SELECT 1 FROM pg_constraint WHERE conname = %s", (constraint_name,))
+            if cur.fetchone():
+                print(f"DEBUG: {exists_message}")
+                return
+
+            try:
+                cur.execute(alter_sql)
+                conn.commit()
+                print(f"DEBUG: {success_message}")
+            except Exception as e:
+                conn.rollback()
+                print(f"DEBUG: Could not add {constraint_name}: {e}")
+
+        # Add circular foreign keys after the core schema is committed so an existing
+        # constraint cannot roll back newly created tables or indexes.
+        ensure_fk_constraint(
+            'fk_registration_keys_used_by',
+            """
                 ALTER TABLE registration_keys
                 ADD CONSTRAINT fk_registration_keys_used_by
                 FOREIGN KEY (used_by) REFERENCES users(id)
-            """)
-            print("DEBUG: Added FK registration_keys.used_by -> users.id")
-        except Exception as e:
-            print(f"DEBUG: Could not add FK registration_keys.used_by -> users.id (may already exist): {e}")
+            """,
+            'Added FK registration_keys.used_by -> users.id',
+            'FK registration_keys.used_by -> users.id already exists'
+        )
 
-        try:
-            cur.execute("""
+        ensure_fk_constraint(
+            'fk_users_registration_key_id',
+            """
                 ALTER TABLE users
                 ADD CONSTRAINT fk_users_registration_key_id
                 FOREIGN KEY (registration_key_id) REFERENCES registration_keys(id)
-            """)
-            print("DEBUG: Added FK users.registration_key_id -> registration_keys.id")
-        except Exception as e:
-            print(f"DEBUG: Could not add FK users.registration_key_id -> registration_keys.id (may already exist): {e}")
+            """,
+            'Added FK users.registration_key_id -> registration_keys.id',
+            'FK users.registration_key_id -> registration_keys.id already exists'
+        )
 
-        conn.commit()
         cur.close()
         print("DEBUG: Database tables created/ensured.")
     except Exception as e:
