@@ -4,6 +4,7 @@ import json
 from psycopg2.extras import RealDictCursor
 from config import Config
 from datetime import datetime, timedelta
+from utils.key_helpers import normalize_registration_key
 
 def get_db_connection():
     db_url = Config.DATABASE_URL
@@ -209,6 +210,7 @@ def create_admin(username, password_hash):
 
 # Key operations
 def create_registration_key(key_value, duration_months, created_by, allowed_telegram_user_id=None, key_type_id=None, notes=None):
+    key_value = normalize_registration_key(key_value)
     return execute_query(
         "INSERT INTO registration_keys (key_value, duration_months, created_by, allowed_telegram_user_id, key_type_id, notes) VALUES (%s, %s, %s, %s, %s, %s)",
         (key_value, duration_months, created_by, allowed_telegram_user_id, key_type_id, notes)
@@ -288,6 +290,7 @@ def redeem_registration_key(key_value, telegram_user_id):
     """
     conn = None
     try:
+        key_value = normalize_registration_key(key_value)
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=RealDictCursor)
 

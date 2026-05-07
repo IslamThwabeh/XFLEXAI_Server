@@ -18,6 +18,7 @@ from services.openai_service import (
 
 from database.operations import get_user_by_telegram_id, redeem_registration_key
 from database.operations import clear_analysis_sessions, count_analysis_sessions, get_analysis_session, upsert_analysis_session
+from utils.key_helpers import normalize_registration_key
 from utils.decorators import subscription_required
 
 api_bp = Blueprint('api_bp', __name__)
@@ -82,7 +83,7 @@ def redeem_key_route():
     """
     data = request.get_json() or {}
     telegram_user_id = data.get('telegram_user_id')
-    key_value = data.get('key')
+    key_value = normalize_registration_key(data.get('key'))
 
     if not telegram_user_id or not key_value:
         return jsonify({"success": False, "error": "telegram_user_id and key are required"}), 400

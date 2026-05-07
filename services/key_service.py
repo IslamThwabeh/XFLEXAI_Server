@@ -1,11 +1,10 @@
 # services/key_service.py
 import random
-import string
 from database.operations import execute_query
+from utils.key_helpers import SAFE_KEY_CHARACTERS
 
 def generate_short_key(length=6):
-    chars = string.ascii_uppercase + string.digits
-    return ''.join(random.choice(chars) for _ in range(length))
+    return ''.join(random.choice(SAFE_KEY_CHARACTERS) for _ in range(length))
 
 def generate_unique_key(length=6):
     """
