@@ -8,7 +8,6 @@ from utils.key_helpers import normalize_registration_key
 
 def get_db_connection():
     db_url = Config.DATABASE_URL
-    print(f"DEBUG: DATABASE_URL (from config) is '{db_url}'")
     if not db_url:
         raise RuntimeError("DATABASE_URL is not configured in environment")
     return psycopg2.connect(db_url)
@@ -186,7 +185,12 @@ def count_analysis_sessions():
 
 # Admin operations
 def get_admin_by_username(username):
-    rows = execute_query("SELECT * FROM admins WHERE username = %s AND is_deleted = FALSE", (username,), fetch=True)
+    rows = execute_query(
+        "SELECT * FROM admins WHERE username = %s AND is_deleted = FALSE",
+        (username,),
+        fetch=True,
+        dict_cursor=True
+    )
     return rows[0] if rows else None
 
 def create_admin(username, password_hash):

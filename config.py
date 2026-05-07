@@ -20,5 +20,6 @@ class Config:
     WTF_CSRF_TIME_LIMIT = 3600  # 1 hour
 
     # Rate Limiting Configuration
-    RATELIMIT_STORAGE_URL = os.environ.get('REDIS_URL', 'memory://')
+    RATELIMIT_STORAGE_URI = os.environ.get('REDIS_URL', 'memory://')
+    RATELIMIT_STORAGE_URL = RATELIMIT_STORAGE_URI
     RATELIMIT_DEFAULT = "100 per hour"

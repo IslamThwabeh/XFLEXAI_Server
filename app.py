@@ -22,13 +22,6 @@ def rate_limit_key():
             return f"telegram:{telegram_user_id}"
     return get_remote_address()
 
-# Auto-create admin if it doesn't exist
-try:
-    from routes.create_admin import main as create_admin_main
-    create_admin_main()
-except Exception as e:
-    print(f"Admin creation warning: {e}")
-
 # Initialize security extensions
 csrf = CSRFProtect(app)
 limiter = Limiter(
@@ -46,6 +39,14 @@ app.config['OPENAI_ERROR_MESSAGE'] = ""
 
 # Initialize DB and OpenAI on startup
 init_database()
+
+# Auto-create admin if it doesn't exist after tables are ensured
+try:
+    from routes.create_admin import main as create_admin_main
+    create_admin_main()
+except Exception as e:
+    print(f"Admin creation warning: {e}")
+
 openai_success = init_openai()
 app.config['OPENAI_AVAILABLE'] = openai_success
 app.config['OPENAI_ERROR_MESSAGE'] = openai_error_message

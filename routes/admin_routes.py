@@ -51,10 +51,10 @@ def admin_login():
 
         try:
             admin = get_admin_by_username(username)
-            if admin and bcrypt.checkpw(password.encode('utf-8'), admin[2].encode('utf-8')):
+            if admin and bcrypt.checkpw(password.encode('utf-8'), admin['password_hash'].encode('utf-8')):
                 session.clear()  # Clear any existing session data
-                session['admin_id'] = admin[0]
-                session['admin_username'] = admin[1]
+                session['admin_id'] = admin['id']
+                session['admin_username'] = admin['username']
                 session['login_time'] = datetime.now().isoformat()
                 session['last_activity'] = datetime.now().isoformat()
                 session.permanent = True

@@ -650,8 +650,8 @@ def detect_currency_from_image(image_str, image_format):
         - Focus on areas that typically show the instrument name
         - If you find ANY instrument indicator, return it in standard format
         - For stocks/indices, return the ticker symbol (SPX, AAPL, etc.)
-        - If no clear instrument found after thorough search, make an educated guess based on price levels and chart characteristics
-        - **NEVER return 'UNKNOWN' without thorough search**
+        - If no clear instrument is found after thorough search, return 'UNKNOWN'
+        - Only make a best-effort identification when the chart contains a credible instrument clue
 
         Return ONLY the instrument symbol in standard format.
         """

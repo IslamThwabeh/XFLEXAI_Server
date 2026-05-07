@@ -19,7 +19,7 @@ from services.openai_service import (
 from database.operations import get_user_by_telegram_id, redeem_registration_key
 from database.operations import clear_analysis_sessions, count_analysis_sessions, get_analysis_session, upsert_analysis_session
 from utils.key_helpers import normalize_registration_key
-from utils.decorators import subscription_required
+from utils.decorators import admin_session_required, subscription_required
 
 api_bp = Blueprint('api_bp', __name__)
 ANALYSIS_SESSION_TTL = timedelta(hours=1)
@@ -67,6 +67,42 @@ def format_instrument_label(currency_pair):
         return currency_pair
     return 'نفس الأداة'
 
+
+def log_api_request_summary(endpoint_name, data):
+    payload = data or {}
+    print(f"🚨 {endpoint_name}: Request keys: {sorted(payload.keys())}")
+    print(f"🚨 {endpoint_name}: Has image URL: {bool(payload.get('image_url'))}")
+
+
+def build_final_analysis_response(session_data):
+    if not session_data.get('first_analysis') or not session_data.get('second_analysis'):
+        return None
+
+    final_currency = session_data.get('second_currency') or session_data.get('first_currency')
+    final_analysis = analyze_with_openai(
+        image_str=None,
+        image_format=None,
+        timeframe="combined",
+        previous_analysis=f"{session_data['first_timeframe']}: {session_data['first_analysis']}",
+        user_analysis=session_data['second_analysis'],
+        action_type="final_analysis",
+        currency_pair=final_currency
+    )
+
+    if len(final_analysis) > 1024:
+        print(f"📏 LENGTH CHECK: Final analysis too long ({len(final_analysis)} chars), shortening...")
+        final_analysis = shorten_analysis_text(final_analysis, timeframe="مدمج", currency=final_currency)
+        print(f"📏 LENGTH CHECK: After shortening: {len(final_analysis)} chars")
+
+    final_instrument_label = format_instrument_label(final_currency)
+    return {
+        "success": True,
+        "message": f"✅ تم التحليل الشامل لـ {final_instrument_label} بنجاح",
+        "analysis": final_analysis,
+        "next_action": "user_analysis",
+        "next_prompt": "هل تريد مشاركة تحليلك الشخصي للحصول على تقييم؟"
+    }
+
 @api_bp.route('/')
 def home():
     openai_available = current_app.config.get('OPENAI_AVAILABLE', False)
@@ -88,6 +124,11 @@ def redeem_key_route():
     if not telegram_user_id or not key_value:
         return jsonify({"success": False, "error": "telegram_user_id and key are required"}), 400
 
+    try:
+        telegram_user_id = int(telegram_user_id)
+    except (ValueError, TypeError):
+        return jsonify({"success": False, "error": "Invalid telegram_user_id"}), 400
+
     result = redeem_registration_key(key_value, telegram_user_id)
     if not result.get('success'):
         return jsonify(result), 400
@@ -105,7 +146,6 @@ def analyze():
     try:
         # LOG INCOMING REQUEST
         print(f"🚨 ANALYZE ENDPOINT: Received request at {datetime.now()}")
-        print(f"🚨 ANALYZE ENDPOINT: Headers: {dict(request.headers)}")
         print(f"🚨 ANALYZE ENDPOINT: Content-Type: {request.content_type}")
 
         if not request.is_json:
@@ -117,7 +157,7 @@ def analyze():
             return jsonify(error_response), 415
 
         data = request.get_json()
-        print(f"🚨 ANALYZE ENDPOINT: 📥 Received JSON data: {data}")
+        log_api_request_summary("ANALYZE ENDPOINT", data)
 
         if not data:
             error_response = {
@@ -133,7 +173,6 @@ def analyze():
 
         print(f"🚨 ANALYZE ENDPOINT: 👤 Telegram ID: {telegram_user_id}")
         print(f"🚨 ANALYZE ENDPOINT: 🎯 Action Type: {action_type}")
-        print(f"🚨 ANALYZE ENDPOINT: 🖼️ Image URL: {image_url}")
 
         # Check OpenAI availability using current_app.config
         openai_available = current_app.config.get('OPENAI_AVAILABLE', False)
@@ -228,6 +267,12 @@ def analyze():
         elif action_type == 'second_analysis':
             print(f"🚨 ANALYZE ENDPOINT: 🔄 Starting second analysis")
 
+            if session_data['status'] == 'both_done' and session_data.get('second_analysis'):
+                print("🚨 ANALYZE ENDPOINT: ♻️ Returning stored combined analysis for retry")
+                response_data = build_final_analysis_response(session_data)
+                if response_data:
+                    return jsonify(response_data), 200
+
             if not image_str:
                 error_response = {
                     "success": False,
@@ -294,41 +339,21 @@ def analyze():
             save_analysis_session(telegram_user_id, session_data)
 
             print(f"🚨 ANALYZE ENDPOINT: 🧠 Generating final combined analysis")
-            # Generate final combined analysis with currency info
-            final_currency = second_currency or session_data.get('first_currency')
-            final_analysis = analyze_with_openai(
-                image_str=None,
-                image_format=None,
-                timeframe="combined",
-                previous_analysis=f"{session_data['first_timeframe']}: {session_data['first_analysis']}",
-                user_analysis=session_data['second_analysis'],
-                action_type="final_analysis",
-                currency_pair=final_currency
-            )
-            final_instrument_label = format_instrument_label(final_currency)
-
-            # ✅ Check length and shorten if needed - UPDATED WITH TIMEFRAME AND CURRENCY
-            if len(final_analysis) > 1024:
-                print(f"📏 LENGTH CHECK: Final analysis too long ({len(final_analysis)} chars), shortening...")
-                final_analysis = shorten_analysis_text(final_analysis, timeframe="مدمج", currency=final_currency)
-                print(f"📏 LENGTH CHECK: After shortening: {len(final_analysis)} chars")
-
-            response_data = {
-                "success": True,
-                "message": f"✅ تم التحليل الشامل لـ {final_instrument_label} بنجاح",
-                "analysis": final_analysis,
-                "next_action": "user_analysis",
-                "next_prompt": "هل تريد مشاركة تحليلك الشخصي للحصول على تقييم؟"
-            }
+            response_data = build_final_analysis_response(session_data)
+            if not response_data:
+                return jsonify({
+                    "success": False,
+                    "message": "تعذر إنشاء التحليل الشامل"
+                }), 500
 
             # Final logging before sending to SendPulse
             print(f"🔍 FINAL RESPONSE TO SENDPULSE - {action_type.upper()}")
-            print(f"📊 Analysis length: {len(final_analysis)} characters")
-            print(f"📋 Final analysis preview: {final_analysis[:100]}...")
-            print(f"🔚 Final analysis ending: ...{final_analysis[-100:] if len(final_analysis) > 100 else final_analysis}")
+            print(f"📊 Analysis length: {len(response_data['analysis'])} characters")
+            print(f"📋 Final analysis preview: {response_data['analysis'][:100]}...")
+            print(f"🔚 Final analysis ending: ...{response_data['analysis'][-100:] if len(response_data['analysis']) > 100 else response_data['analysis']}")
             print(f"🔍 FINAL CHECK BEFORE SENDPULSE:")
             print(f"📊 Response data size: {len(str(response_data))} characters")
-            print(f"📊 Analysis field size: {len(final_analysis)} characters")
+            print(f"📊 Analysis field size: {len(response_data['analysis'])} characters")
             print(f"🚀 Sending to SendPulse...")
 
             print(f"🚨 ANALYZE ENDPOINT: ✅ Second analysis completed - Response: {response_data}")
@@ -405,11 +430,11 @@ def analyze():
     except Exception as e:
         error_response = {
             "success": False,
-            "message": f"خطأ أثناء المعالجة: {str(e)}"
+            "message": "حدث خطأ أثناء المعالجة. حاول مرة أخرى لاحقاً"
         }
         print(f"🚨 ANALYZE ENDPOINT: ❌ Exception occurred: {str(e)}")
         print(f"🚨 ANALYZE ENDPOINT: ❌ Returning error: {error_response}")
-        return jsonify(error_response), 400
+        return jsonify(error_response), 500
 
 @api_bp.route('/status')
 def status_route():
@@ -421,6 +446,7 @@ def status_route():
     })
 
 @api_bp.route('/session-info/<int:telegram_user_id>')
+@admin_session_required
 def session_info(telegram_user_id):
     record = get_analysis_session(telegram_user_id)
     if record:
@@ -434,6 +460,7 @@ def session_info(telegram_user_id):
         return jsonify({"success": False, "message": "الجلسة غير موجودة"})
 
 @api_bp.route('/clear-sessions')
+@admin_session_required
 def clear_sessions():
     count = clear_analysis_sessions()
     return jsonify({
@@ -455,7 +482,7 @@ def analyze_single_image():
         print(f"🚨 ANALYZE-SINGLE: 📥 Received request at {datetime.now()}")
 
         data = request.get_json()
-        print(f"🚨 ANALYZE-SINGLE: 📥 Request data: {data}")
+        log_api_request_summary("ANALYZE-SINGLE", data)
 
         if not data:
             print("🚨 ANALYZE-SINGLE: ❌ No JSON data provided")
@@ -465,7 +492,6 @@ def analyze_single_image():
             }), 200
 
         image_url = data.get('image_url')
-        print(f"🚨 ANALYZE-SINGLE: 🖼️ Image URL: {image_url}")
 
         if not image_url:
             print("🚨 ANALYZE-SINGLE: ❌ Missing image_url")
@@ -606,7 +632,7 @@ def analyze_technical():
         print(f"🚨 ANALYZE-TECHNICAL: 📥 Received request at {datetime.now()}")
 
         data = request.get_json()
-        print(f"🚨 ANALYZE-TECHNICAL: 📥 Request data: {data}")
+        log_api_request_summary("ANALYZE-TECHNICAL", data)
 
         if not data:
             return jsonify({
@@ -615,7 +641,6 @@ def analyze_technical():
             }), 200
 
         image_url = data.get('image_url')
-        print(f"🚨 ANALYZE-TECHNICAL: 🖼️ Image URL: {image_url}")
 
         if not image_url:
             return jsonify({
@@ -732,7 +757,7 @@ def analyze_user_feedback():
         print(f"🚨 ANALYZE-USER-FEEDBACK: 📥 Received request at {datetime.now()}")
 
         data = request.get_json()
-        print(f"🚨 ANALYZE-USER-FEEDBACK: 📥 Request data: {data}")
+        log_api_request_summary("ANALYZE-USER-FEEDBACK", data)
 
         if not data:
             return jsonify({
@@ -741,7 +766,6 @@ def analyze_user_feedback():
             }), 200
 
         image_url = data.get('image_url')
-        print(f"🚨 ANALYZE-USER-FEEDBACK: 🖼️ Image URL: {image_url}")
 
         if not image_url:
             return jsonify({

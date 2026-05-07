@@ -1,6 +1,6 @@
 # utils/decorators.py
 from functools import wraps
-from flask import request, jsonify
+from flask import request, jsonify, session
 from database.operations import get_user_by_telegram_id
 from datetime import datetime
 
@@ -62,6 +62,20 @@ def subscription_required(f):
                 'success': False,
                 'code': 'expired',
                 'message': 'Your subscription has expired. Please renew or contact admin.'
+            }), 403
+
+        return f(*args, **kwargs)
+
+    return decorated_function
+
+
+def admin_session_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'admin_id' not in session:
+            return jsonify({
+                'success': False,
+                'message': 'Admin authentication required'
             }), 403
 
         return f(*args, **kwargs)
