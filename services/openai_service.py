@@ -13,6 +13,21 @@ openai_error_message = ""
 openai_last_check = 0
 VISION_IMAGE_DETAIL = "high"
 
+
+def canonicalize_instrument_symbol(symbol):
+    if not symbol:
+        return 'UNKNOWN'
+
+    cleaned_symbol = str(symbol).replace(' ', '').replace('/', '').upper()
+    if cleaned_symbol in ['UNKNOWN', 'NOTFOUND', '']:
+        return 'UNKNOWN'
+
+    quote_currencies = {'USD', 'EUR', 'JPY', 'GBP', 'CHF', 'AUD', 'CAD', 'NZD'}
+    if len(cleaned_symbol) == 6 and cleaned_symbol.isalpha() and cleaned_symbol[3:] in quote_currencies:
+        return f"{cleaned_symbol[:3]}/{cleaned_symbol[3:]}"
+
+    return cleaned_symbol
+
 def log_openai_response(action_type, response_content, char_limit=1024):
     """
     Comprehensive logging for OpenAI responses
@@ -710,8 +725,7 @@ def detect_currency_from_image(image_str, image_format):
         if cleaned_symbol in symbol_mapping:
             cleaned_symbol = symbol_mapping[cleaned_symbol]
         
-        if cleaned_symbol in ['UNKNOWN', 'NOTFOUND', '']:
-            cleaned_symbol = 'UNKNOWN'
+        cleaned_symbol = canonicalize_instrument_symbol(cleaned_symbol)
         
         print(f"🪙 Cleaned symbol: '{cleaned_symbol}'")
 
@@ -739,9 +753,9 @@ def validate_currency_consistency(first_currency, second_currency):
             print(f"🪙 ⚠️ Currency validation skipped - one or both currencies unknown")
             return True, None  # Skip validation if currency detection failed
 
-        # Normalize currencies for comparison (remove any spaces, make uppercase)
-        first_normalized = first_currency.replace(' ', '').upper()
-        second_normalized = second_currency.replace(' ', '').upper()
+        # Normalize currencies for comparison so XAUUSD and XAU/USD match.
+        first_normalized = canonicalize_instrument_symbol(first_currency).replace('/', '')
+        second_normalized = canonicalize_instrument_symbol(second_currency).replace('/', '')
 
         # Check if they are the same
         if first_normalized == second_normalized:
