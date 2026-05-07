@@ -56,5 +56,14 @@ def get_table_definitions():
               is_deleted BOOLEAN DEFAULT FALSE,
               notes TEXT
             )
+        ''',
+        'analysis_sessions': '''
+            CREATE TABLE IF NOT EXISTS analysis_sessions (
+              telegram_user_id BIGINT PRIMARY KEY,
+              session_data TEXT NOT NULL,
+              status VARCHAR(32) NOT NULL DEFAULT 'ready',
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
         '''
     }

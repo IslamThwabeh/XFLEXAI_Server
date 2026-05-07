@@ -1,5 +1,6 @@
 # database/operations.py
 import psycopg2
+import json
 from psycopg2.extras import RealDictCursor
 from config import Config
 from datetime import datetime, timedelta
@@ -33,6 +34,9 @@ def init_database():
         """)
         cur.execute("""
             CREATE INDEX IF NOT EXISTS idx_registration_keys_allowed_telegram_user_id ON registration_keys (allowed_telegram_user_id);
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_analysis_sessions_updated_at ON analysis_sessions (updated_at);
         """)
 
         # Seed basic key_types if not present
@@ -105,6 +109,62 @@ def execute_query(query, params=None, fetch=False, dict_cursor=False):
     finally:
         if conn:
             conn.close()
+
+def get_analysis_session(telegram_user_id):
+    rows = execute_query(
+        "SELECT telegram_user_id, session_data, status, updated_at FROM analysis_sessions WHERE telegram_user_id = %s",
+        (telegram_user_id,),
+        fetch=True,
+        dict_cursor=True
+    )
+    if not rows:
+        return None
+
+    row = dict(rows[0])
+    session_data = row.get('session_data')
+    if isinstance(session_data, str):
+        try:
+            session_data = json.loads(session_data)
+        except json.JSONDecodeError:
+            session_data = {}
+
+    row['session_data'] = session_data or {}
+    return row
+
+def upsert_analysis_session(telegram_user_id, session_data):
+    payload = json.dumps(session_data, ensure_ascii=False)
+    execute_query(
+        """
+        INSERT INTO analysis_sessions (telegram_user_id, session_data, status, updated_at)
+        VALUES (%s, %s, %s, NOW())
+        ON CONFLICT (telegram_user_id) DO UPDATE
+        SET session_data = EXCLUDED.session_data,
+            status = EXCLUDED.status,
+            updated_at = NOW()
+        """,
+        (telegram_user_id, payload, session_data.get('status', 'ready'))
+    )
+
+def delete_analysis_session(telegram_user_id):
+    execute_query("DELETE FROM analysis_sessions WHERE telegram_user_id = %s", (telegram_user_id,))
+
+def clear_analysis_sessions():
+    rows = execute_query(
+        "DELETE FROM analysis_sessions RETURNING telegram_user_id",
+        fetch=True,
+        dict_cursor=True
+    )
+    return len(rows)
+
+def count_analysis_sessions():
+    rows = execute_query(
+        "SELECT COUNT(*) AS session_count FROM analysis_sessions",
+        fetch=True,
+        dict_cursor=True
+    )
+    if not rows:
+        return 0
+    return int(rows[0].get('session_count', 0))
 
 # Admin operations
 def get_admin_by_username(username):

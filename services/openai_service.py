@@ -11,6 +11,7 @@ OPENAI_AVAILABLE = False
 client = None
 openai_error_message = ""
 openai_last_check = 0
+VISION_IMAGE_DETAIL = "high"
 
 def log_openai_response(action_type, response_content, char_limit=1024):
     """
@@ -455,7 +456,7 @@ def detect_investing_frame(image_str, image_format):
                             "type": "image_url",
                             "image_url": {
                                 "url": f"data:image/{image_format};base64,{image_str}",
-                                "detail": "low"
+                                "detail": VISION_IMAGE_DETAIL
                             }
                         }
                     ]
@@ -558,7 +559,7 @@ def extract_investing_data(image_str, image_format):
                             "type": "image_url",
                             "image_url": {
                                 "url": f"data:image/{image_format};base64,{image_str}",
-                                "detail": "low"
+                                "detail": VISION_IMAGE_DETAIL
                             }
                         }
                     ]
@@ -673,7 +674,7 @@ def detect_currency_from_image(image_str, image_format):
                             "type": "image_url",
                             "image_url": {
                                 "url": f"data:image/{image_format};base64,{image_str}",
-                                "detail": "low"
+                                "detail": VISION_IMAGE_DETAIL
                             }
                         }
                     ]
@@ -709,17 +710,8 @@ def detect_currency_from_image(image_str, image_format):
         if cleaned_symbol in symbol_mapping:
             cleaned_symbol = symbol_mapping[cleaned_symbol]
         
-        # Price-based inference for unknown symbols
         if cleaned_symbol in ['UNKNOWN', 'NOTFOUND', '']:
-            # Analyze price levels to make educated guess
-            if '6800' in detected_symbol or '6880' in detected_symbol:
-                cleaned_symbol = 'SPX'  # S&P 500 typical price range
-            elif '15000' in detected_symbol or '16000' in detected_symbol:
-                cleaned_symbol = 'DOW'  # Dow Jones typical range
-            elif '13000' in detected_symbol or '14000' in detected_symbol:
-                cleaned_symbol = 'NQ'  # Nasdaq typical range
-            else:
-                cleaned_symbol = 'SPX'  # Default to SPX for stock charts
+            cleaned_symbol = 'UNKNOWN'
         
         print(f"🪙 Cleaned symbol: '{cleaned_symbol}'")
 
@@ -728,12 +720,12 @@ def detect_currency_from_image(image_str, image_format):
             print(f"🪙 ✅ Valid symbol detected: '{cleaned_symbol}'")
             return cleaned_symbol, None
         else:
-            print(f"🪙 ⚠️ Questionable symbol detected, using SPX as default: '{cleaned_symbol}'")
-            return 'SPX', None
+            print(f"🪙 ⚠️ Questionable symbol detected, returning UNKNOWN: '{cleaned_symbol}'")
+            return 'UNKNOWN', None
 
     except Exception as e:
         print(f"ERROR: Symbol detection failed: {str(e)}")
-        return 'SPX', None  # Default to SPX on error
+        return 'UNKNOWN', None
 
 def validate_currency_consistency(first_currency, second_currency):
     """
@@ -832,7 +824,7 @@ def detect_timeframe_from_image(image_str, image_format):
                             "type": "image_url",
                             "image_url": {
                                 "url": f"data:image/{image_format};base64,{image_str}",
-                                "detail": "low"
+                                "detail": VISION_IMAGE_DETAIL
                             }
                         }
                     ]
@@ -1005,7 +997,7 @@ def analyze_simple_chart_fallback(image_str, image_format, timeframe, currency_p
                         {"type": "text", "text": fallback_prompt},
                         {"type": "image_url", "image_url": {
                             "url": f"data:image/{image_format};base64,{image_str}",
-                            "detail": "low"
+                            "detail": VISION_IMAGE_DETAIL
                         }}
                     ]
                 }
@@ -1176,6 +1168,8 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 
 التحليل الأول (M15): {previous_analysis}
 
+التحليل الثاني (H4): {user_analysis}
+
 **المطلوب تحليل نهائي متكامل يتضمن:**
 
 ### 📈 التحليل الشامل
@@ -1198,7 +1192,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 **التعليمات الإلزامية:**
 - التزم بـ 1000 حرف كحد أقصى
 - لا تتجاوز 1024 حرف بأي حال
-- ركز على التوصيات العملية
+- ركز على دمج التحليلين واستخراج التوصيات العملية النهائية
 - كن مباشراً وواضحاً
 - **ممنوع منعاً باتاً اقتراح وقف خسارة أكثر من الحد المسموح**
 - **لا تضف عدد الأحرف في نهاية الرد**
@@ -1257,7 +1251,7 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
                     {"role": "system", "content": f"أنت محلل فني محترف. التزم بعدم تجاوز {char_limit} حرف في ردك. لا تضف عدد الأحرف في النهاية."},
                     {"role": "user", "content": [
                         {"type": "text", "text": analysis_prompt},
-                        {"type": "image_url", "image_url": {"url": f"data:image/{image_format.lower()};base64,{image_str}", "detail": "low"}}
+                        {"type": "image_url", "image_url": {"url": f"data:image/{image_format.lower()};base64,{image_str}", "detail": VISION_IMAGE_DETAIL}}
                     ]}
                 ],
                 max_tokens=max_tokens,
@@ -1423,7 +1417,7 @@ def analyze_technical_chart(image_str, image_format, timeframe=None, currency_pa
                 {"role": "system", "content": "أنت خبير تحليل فني. ركز فقط على التحليل الفني. التزم بعدم تجاوز 1024 حرف. لا تضف عدد الأحرف في النهاية."},
                 {"role": "user", "content": [
                     {"type": "text", "text": analysis_prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/{image_format.lower()};base64,{image_str}", "detail": "low"}}
+                    {"type": "image_url", "image_url": {"url": f"data:image/{image_format.lower()};base64,{image_str}", "detail": VISION_IMAGE_DETAIL}}
                 ]}
             ],
             max_tokens=max_tokens,
@@ -1515,7 +1509,7 @@ def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
                 {"role": "system", "content": "أنت مدرس تحليل فني محترف. قيم تحليل المستخدم المرسوم بموضوعية. التزم بعدم تجاوز 1024 حرف. لا تضف عدد الأحرف في النهاية."},
                 {"role": "user", "content": [
                     {"type": "text", "text": feedback_prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/{image_format.lower()};base64,{image_str}", "detail": "low"}}
+                    {"type": "image_url", "image_url": {"url": f"data:image/{image_format.lower()};base64,{image_str}", "detail": VISION_IMAGE_DETAIL}}
                 ]}
             ],
             max_tokens=max_tokens,

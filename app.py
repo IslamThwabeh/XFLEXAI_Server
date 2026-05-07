@@ -14,6 +14,14 @@ from routes.api_routes import api_bp
 app = Flask(__name__)
 app.config.from_object(Config)
 
+def rate_limit_key():
+    if request.blueprint == 'api_bp' and request.is_json:
+        data = request.get_json(silent=True) or {}
+        telegram_user_id = data.get('telegram_user_id')
+        if telegram_user_id:
+            return f"telegram:{telegram_user_id}"
+    return get_remote_address()
+
 # Auto-create admin if it doesn't exist
 try:
     from routes.create_admin import main as create_admin_main
@@ -24,7 +32,7 @@ except Exception as e:
 # Initialize security extensions
 csrf = CSRFProtect(app)
 limiter = Limiter(
-    key_func=get_remote_address,
+    key_func=rate_limit_key,
     default_limits=["200 per day", "50 per hour"]
 )
 limiter.init_app(app)

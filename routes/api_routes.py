@@ -1,6 +1,6 @@
 # routes/api_routes.py
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, current_app
 from services.openai_service import (
     analyze_with_openai,
@@ -17,10 +17,54 @@ from services.openai_service import (
 )
 
 from database.operations import get_user_by_telegram_id, redeem_registration_key
+from database.operations import clear_analysis_sessions, count_analysis_sessions, get_analysis_session, upsert_analysis_session
 from utils.decorators import subscription_required
 
 api_bp = Blueprint('api_bp', __name__)
-analysis_sessions = {}
+ANALYSIS_SESSION_TTL = timedelta(hours=1)
+
+def create_analysis_session():
+    return {
+        'first_analysis': None,
+        'second_analysis': None,
+        'first_timeframe': None,
+        'second_timeframe': None,
+        'first_currency': None,
+        'second_currency': None,
+        'user_analysis': None,
+        'status': 'ready'
+    }
+
+def load_analysis_session(telegram_user_id, reset=False):
+    if reset:
+        session_data = create_analysis_session()
+        upsert_analysis_session(telegram_user_id, session_data)
+        return session_data
+
+    record = get_analysis_session(telegram_user_id)
+    if not record:
+        session_data = create_analysis_session()
+        upsert_analysis_session(telegram_user_id, session_data)
+        return session_data
+
+    updated_at = record.get('updated_at')
+    if updated_at and datetime.utcnow() - updated_at > ANALYSIS_SESSION_TTL:
+        print(f"⏳ ANALYZE ENDPOINT: Session expired for Telegram ID {telegram_user_id}, resetting")
+        session_data = create_analysis_session()
+        upsert_analysis_session(telegram_user_id, session_data)
+        return session_data
+
+    session_data = create_analysis_session()
+    session_data.update(record.get('session_data') or {})
+    return session_data
+
+def save_analysis_session(telegram_user_id, session_data):
+    upsert_analysis_session(telegram_user_id, session_data)
+
+def format_instrument_label(currency_pair):
+    if currency_pair and currency_pair != 'UNKNOWN':
+        return currency_pair
+    return 'نفس الأداة'
 
 @api_bp.route('/')
 def home():
@@ -82,7 +126,7 @@ def analyze():
             print(f"🚨 ANALYZE ENDPOINT: ❌ Returning error - No data: {error_response}")
             return jsonify(error_response), 400
 
-        telegram_user_id = data.get('telegram_user_id')
+        telegram_user_id = int(data.get('telegram_user_id'))
         action_type = data.get('action_type', 'first_analysis')
         image_url = data.get('image_url')
 
@@ -102,20 +146,7 @@ def analyze():
             print(f"🚨 ANALYZE ENDPOINT: ❌ Returning error - OpenAI unavailable: {error_response}")
             return jsonify(error_response), 503
 
-        # Initialize or get session
-        if telegram_user_id not in analysis_sessions:
-            analysis_sessions[telegram_user_id] = {
-                'first_analysis': None,
-                'second_analysis': None,
-                'first_timeframe': None,
-                'second_timeframe': None,
-                'first_currency': None,
-                'second_currency': None,
-                'user_analysis': None,
-                'status': 'ready'
-            }
-
-        session_data = analysis_sessions[telegram_user_id]
+        session_data = load_analysis_session(telegram_user_id, reset=(action_type == 'first_analysis'))
         user_analysis_text = data.get('user_analysis')
         timeframe = data.get('timeframe', 'M15')
 
@@ -169,13 +200,15 @@ def analyze():
             session_data['first_timeframe'] = timeframe
             session_data['first_currency'] = first_currency
             session_data['status'] = 'first_done'
+            save_analysis_session(telegram_user_id, session_data)
+            instrument_label = format_instrument_label(first_currency)
 
             response_data = {
                 "success": True,
-                "message": f"✅ تم تحليل {timeframe} لـ {first_currency} بنجاح",
+                "message": f"✅ تم تحليل {timeframe} لـ {instrument_label} بنجاح",
                 "analysis": analysis,
                 "next_action": "second_analysis",
-                "next_prompt": f"الآن أرسل صورة الإطار الزمني الثاني (H4) لنفس العملة ({first_currency})"
+                "next_prompt": f"الآن أرسل صورة الإطار الزمني الثاني (H4) لـ {instrument_label}"
             }
 
             # Final logging before sending to SendPulse
@@ -257,16 +290,21 @@ def analyze():
             session_data['second_timeframe'] = second_timeframe
             session_data['second_currency'] = second_currency
             session_data['status'] = 'both_done'
+            save_analysis_session(telegram_user_id, session_data)
 
             print(f"🚨 ANALYZE ENDPOINT: 🧠 Generating final combined analysis")
             # Generate final combined analysis with currency info
             final_currency = second_currency or session_data.get('first_currency')
             final_analysis = analyze_with_openai(
-                None, None, "combined",
-                f"{session_data['first_timeframe']}: {session_data['first_analysis']}",
-                session_data['second_analysis'], "final_analysis",
+                image_str=None,
+                image_format=None,
+                timeframe="combined",
+                previous_analysis=f"{session_data['first_timeframe']}: {session_data['first_analysis']}",
+                user_analysis=session_data['second_analysis'],
+                action_type="final_analysis",
                 currency_pair=final_currency
             )
+            final_instrument_label = format_instrument_label(final_currency)
 
             # ✅ Check length and shorten if needed - UPDATED WITH TIMEFRAME AND CURRENCY
             if len(final_analysis) > 1024:
@@ -276,7 +314,7 @@ def analyze():
 
             response_data = {
                 "success": True,
-                "message": f"✅ تم التحليل الشامل لـ {second_currency} بنجاح",
+                "message": f"✅ تم التحليل الشامل لـ {final_instrument_label} بنجاح",
                 "analysis": final_analysis,
                 "next_action": "user_analysis",
                 "next_prompt": "هل تريد مشاركة تحليلك الشخصي للحصول على تقييم؟"
@@ -318,6 +356,7 @@ def analyze():
 
             session_data['user_analysis'] = user_analysis_text
             session_data['status'] = 'completed'
+            save_analysis_session(telegram_user_id, session_data)
 
             response_data = {
                 "success": True,
@@ -342,17 +381,8 @@ def analyze():
 
         elif action_type == 'new_session':
             print(f"🚨 ANALYZE ENDPOINT: 🔄 Starting new session")
-            # Reset session but keep conversation history if needed
-            analysis_sessions[telegram_user_id] = {
-                'first_analysis': None,
-                'second_analysis': None,
-                'first_timeframe': None,
-                'second_timeframe': None,
-                'first_currency': None,
-                'second_currency': None,
-                'user_analysis': None,
-                'status': 'ready'
-            }
+            session_data = create_analysis_session()
+            save_analysis_session(telegram_user_id, session_data)
 
             response_data = {
                 "success": True,
@@ -386,13 +416,15 @@ def status_route():
     return jsonify({
         "server": "running",
         "openai_available": openai_available,
-        "active_sessions": len(analysis_sessions)
+        "active_sessions": count_analysis_sessions()
     })
 
 @api_bp.route('/session-info/<int:telegram_user_id>')
 def session_info(telegram_user_id):
-    if telegram_user_id in analysis_sessions:
-        session_data = analysis_sessions[telegram_user_id].copy()
+    record = get_analysis_session(telegram_user_id)
+    if record:
+        session_data = create_analysis_session()
+        session_data.update(record.get('session_data') or {})
         if 'conversation_history' in session_data:
             session_data['conversation_count'] = len(session_data['conversation_history'])
             del session_data['conversation_history']
@@ -402,9 +434,7 @@ def session_info(telegram_user_id):
 
 @api_bp.route('/clear-sessions')
 def clear_sessions():
-    global analysis_sessions
-    count = len(analysis_sessions)
-    analysis_sessions = {}
+    count = clear_analysis_sessions()
     return jsonify({
         "message": f"تم مسح {count} جلسة",
         "status": "sessions_cleared"
