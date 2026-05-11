@@ -201,6 +201,10 @@
             font-size: 0.9rem;
             word-break: break-all;
         }
+
+        .action-cell {
+            min-width: 130px;
+        }
     </style>
 </head>
 <body>
@@ -393,9 +397,17 @@
             <!-- Keys Table -->
             <div class="col-lg-6 mb-4">
                 <div class="card">
-                    <div class="card-header d-flex justify-content-between align-items-center">
+                    <div class="card-header d-flex justify-content-between align-items-center gap-2 flex-wrap">
                         <span><i class="fas fa-key me-2"></i>Registration Keys</span>
-                        <span class="badge bg-primary">{{ keys|length }}</span>
+                        <div class="d-flex align-items-center gap-2">
+                            <input type="text"
+                                   id="keyFilterInput"
+                                   class="form-control form-control-sm"
+                                   placeholder="Filter keys..."
+                                   aria-label="Filter registration keys"
+                                   style="max-width: 180px;">
+                            <span class="badge bg-primary">{{ keys|length }}</span>
+                        </div>
                     </div>
                     <div class="card-body p-0">
                         {% if keys %}
@@ -407,6 +419,7 @@
                                         <th>Duration</th>
                                         <th>Status</th>
                                         <th>Created</th>
+                                        <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody id="keysTableBody">
@@ -420,7 +433,9 @@
                                         </td>
                                         <td>{{ key.duration_months }} month{% if key.duration_months != 1 %}s{% endif %}</td>
                                         <td>
-                                            {% if key.used %}
+                                            {% if not key.is_active %}
+                                            <span class="badge bg-danger">Expired</span>
+                                            {% elif key.used %}
                                             <span class="badge bg-success">Used</span>
                                             <br><small>by {{ key.used_by_telegram }}</small>
                                             {% else %}
@@ -428,6 +443,17 @@
                                             {% endif %}
                                         </td>
                                         <td>{{ key.created_at }}</td>
+                                        <td class="action-cell">
+                                            {% if key.is_active %}
+                                            <button type="button"
+                                                    class="btn btn-sm btn-outline-danger"
+                                                    onclick="expireKey('{{ key.key_value }}')">
+                                                <i class="fas fa-ban me-1"></i>Expire
+                                            </button>
+                                            {% else %}
+                                            <span class="text-muted small">Already expired</span>
+                                            {% endif %}
+                                        </td>
                                     </tr>
                                     {% endfor %}
                                 </tbody>
@@ -569,6 +595,35 @@
             });
         }
 
+        function expireKey(keyValue) {
+            if (!confirm(`Mark key ${keyValue} as expired?`)) {
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('key_value', keyValue);
+
+            fetch('/admin/expire-key', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': getCSRFToken()
+                },
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(`Key ${keyValue} has been marked as expired.`);
+                    window.location.reload();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            })
+            .catch(error => {
+                alert('Error expiring key: ' + error);
+            });
+        }
+
         // Pagination functionality
         document.addEventListener('DOMContentLoaded', function() {
             const keysTable = document.getElementById('keysTable');
@@ -576,6 +631,7 @@
 
             const tableBody = document.getElementById('keysTableBody');
             const rows = Array.from(tableBody.getElementsByTagName('tr'));
+            const keyFilterInput = document.getElementById('keyFilterInput');
             const pageSizeSelect = document.getElementById('pageSize');
             const paginationControls = document.getElementById('paginationControls');
             const showingStart = document.getElementById('showingStart');
@@ -584,10 +640,22 @@
 
             let currentPage = 1;
             let pageSize = parseInt(pageSizeSelect.value);
+            let filteredRows = rows;
+
+            function getFilteredRows() {
+                const searchValue = (keyFilterInput.value || '').trim().toLowerCase();
+                if (!searchValue) {
+                    return rows;
+                }
+
+                return rows.filter((row) => {
+                    return row.textContent.toLowerCase().includes(searchValue);
+                });
+            }
 
             function updatePagination() {
                 // Calculate total pages
-                const totalPages = Math.ceil(rows.length / pageSize);
+                const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
                 
                 // Clear existing pagination controls
                 paginationControls.innerHTML = '';
@@ -631,24 +699,36 @@
                 paginationControls.appendChild(nextLi);
                 
                 // Update showing information
-                const start = (currentPage - 1) * pageSize + 1;
-                const end = Math.min(currentPage * pageSize, rows.length);
-                showingStart.textContent = start;
-                showingEnd.textContent = end;
-                totalEntries.textContent = rows.length;
+                if (filteredRows.length === 0) {
+                    showingStart.textContent = 0;
+                    showingEnd.textContent = 0;
+                } else {
+                    const start = (currentPage - 1) * pageSize + 1;
+                    const end = Math.min(currentPage * pageSize, filteredRows.length);
+                    showingStart.textContent = start;
+                    showingEnd.textContent = end;
+                }
+                totalEntries.textContent = filteredRows.length;
             }
             
             function showPage(page) {
+                filteredRows = getFilteredRows();
                 currentPage = page;
-                const start = (page - 1) * pageSize;
+
+                const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+                if (currentPage > totalPages) {
+                    currentPage = totalPages;
+                }
+
+                const start = (currentPage - 1) * pageSize;
                 const end = start + pageSize;
                 
                 // Hide all rows
                 rows.forEach(row => row.style.display = 'none');
                 
                 // Show rows for current page
-                for (let i = start; i < end && i < rows.length; i++) {
-                    rows[i].style.display = '';
+                for (let i = start; i < end && i < filteredRows.length; i++) {
+                    filteredRows[i].style.display = '';
                 }
                 
                 updatePagination();
@@ -657,6 +737,11 @@
             // Event listener for page size change
             pageSizeSelect.addEventListener('change', function() {
                 pageSize = parseInt(this.value);
+                currentPage = 1;
+                showPage(currentPage);
+            });
+
+            keyFilterInput.addEventListener('input', function() {
                 currentPage = 1;
                 showPage(currentPage);
             });

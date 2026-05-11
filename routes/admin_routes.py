@@ -11,9 +11,11 @@ from database.operations import (
     create_admin,
     create_registration_key,
     get_registration_keys,
-    get_users
+    get_users,
+    deactivate_registration_key
 )
 from services.key_service import generate_unique_key
+from utils.key_helpers import normalize_registration_key
 
 admin_bp = Blueprint('admin_bp', __name__)
 
@@ -243,6 +245,38 @@ def generate_key():
     except Exception as e:
         print(f"ERROR: Unexpected error in generate_key: {e}")
         return jsonify({'success': False, 'error': 'Unexpected server error'}), 500
+
+@admin_bp.route('/admin/expire-key', methods=['POST'])
+def expire_key():
+    """Mark a registration key as expired (inactive)."""
+    if not require_admin_session():
+        return jsonify({'success': False, 'error': 'Not authenticated'}), 403
+
+    try:
+        if request.is_json:
+            data = request.get_json() or {}
+            key_value = data.get('key_value')
+        else:
+            key_value = request.form.get('key_value') or request.values.get('key_value')
+
+        normalized_key = normalize_registration_key(key_value)
+        if not normalized_key:
+            return jsonify({'success': False, 'error': 'Key value is required'}), 400
+
+        updated_key = deactivate_registration_key(normalized_key)
+        if not updated_key:
+            return jsonify({'success': False, 'error': 'Key not found'}), 404
+
+        admin_username = session.get('admin_username', 'Unknown')
+        print(f"INFO: Key '{normalized_key}' marked as expired by admin '{admin_username}'")
+
+        return jsonify({
+            'success': True,
+            'key': updated_key.get('key_value')
+        }), 200
+    except Exception as e:
+        print(f"ERROR: expire_key failed: {e}")
+        return jsonify({'success': False, 'error': 'Failed to expire key'}), 500
 
 @admin_bp.route('/admin/session-info')
 def session_info():

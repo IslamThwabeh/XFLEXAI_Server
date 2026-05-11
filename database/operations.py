@@ -237,6 +237,24 @@ def get_registration_keys():
         dict_cursor=True
     )
 
+def deactivate_registration_key(key_value):
+    normalized_key = normalize_registration_key(key_value)
+    if not normalized_key:
+        return None
+
+    rows = execute_query(
+        """
+        UPDATE registration_keys
+        SET is_active = FALSE
+        WHERE key_value = %s AND is_deleted = FALSE
+        RETURNING id, key_value, is_active
+        """,
+        (normalized_key,),
+        fetch=True,
+        dict_cursor=True
+    )
+    return rows[0] if rows else None
+
 # User operations
 def get_users():
     return execute_query(
