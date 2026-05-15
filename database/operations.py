@@ -6,6 +6,8 @@ from config import Config
 from datetime import datetime, timedelta
 from utils.key_helpers import normalize_registration_key
 
+INIT_DATABASE_LOCK_ID = 2147480361
+
 def get_db_connection():
     db_url = Config.DATABASE_URL
     if not db_url:
@@ -16,9 +18,13 @@ def init_database():
     from database.models import get_table_definitions
     print("DEBUG: Starting database initialization (init_database).")
     conn = None
+    cur = None
+    lock_acquired = False
     try:
         conn = get_db_connection()
         cur = conn.cursor()
+        cur.execute("SELECT pg_advisory_lock(%s)", (INIT_DATABASE_LOCK_ID,))
+        lock_acquired = True
         tables = get_table_definitions()
         # Create each table (no circular FKs in DDL)
         for name, ddl in tables.items():
@@ -101,7 +107,6 @@ def init_database():
             'FK users.registration_key_id -> registration_keys.id already exists'
         )
 
-        cur.close()
         print("DEBUG: Database tables created/ensured.")
     except Exception as e:
         if conn:
@@ -110,6 +115,15 @@ def init_database():
         raise
     finally:
         if conn:
+            if cur and lock_acquired:
+                try:
+                    cur.execute("SELECT pg_advisory_unlock(%s)", (INIT_DATABASE_LOCK_ID,))
+                    conn.commit()
+                except Exception as unlock_error:
+                    print(f"DEBUG: Failed to release init_database advisory lock cleanly: {unlock_error}")
+                    conn.rollback()
+            if cur:
+                cur.close()
             conn.close()
 
 def execute_query(query, params=None, fetch=False, dict_cursor=False):
