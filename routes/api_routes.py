@@ -1,7 +1,8 @@
 # routes/api_routes.py
 import time
 from datetime import datetime, timedelta
-from flask import Blueprint, request, jsonify, current_app
+from uuid import uuid4
+from flask import Blueprint, request, jsonify, current_app, g
 from services.openai_service import (
     analyze_with_openai,
     load_image_from_url,
@@ -28,12 +29,23 @@ def create_analysis_session():
     return {
         'first_analysis': None,
         'second_analysis': None,
+        'final_analysis': None,
         'first_timeframe': None,
         'second_timeframe': None,
         'first_currency': None,
         'second_currency': None,
         'user_analysis': None,
+        'flow_id': uuid4().hex,
         'status': 'ready'
+    }
+
+
+def set_openai_usage_context(telegram_user_id, endpoint_name, flow_type, flow_id):
+    g.openai_usage_context = {
+        'telegram_user_id': telegram_user_id,
+        'endpoint_name': endpoint_name,
+        'flow_type': flow_type,
+        'flow_id': flow_id
     }
 
 def load_analysis_session(telegram_user_id, reset=False):
@@ -57,6 +69,8 @@ def load_analysis_session(telegram_user_id, reset=False):
 
     session_data = create_analysis_session()
     session_data.update(record.get('session_data') or {})
+    if not session_data.get('flow_id'):
+        session_data['flow_id'] = uuid4().hex
     return session_data
 
 def save_analysis_session(telegram_user_id, session_data):
@@ -79,6 +93,18 @@ def build_final_analysis_response(session_data):
         return None
 
     final_currency = session_data.get('second_currency') or session_data.get('first_currency')
+    cached_final_analysis = session_data.get('final_analysis')
+    final_instrument_label = format_instrument_label(final_currency)
+
+    if cached_final_analysis:
+        return {
+            "success": True,
+            "message": f"✅ تم التحليل الشامل لـ {final_instrument_label} بنجاح",
+            "analysis": cached_final_analysis,
+            "next_action": "user_analysis",
+            "next_prompt": "هل تريد مشاركة تحليلك الشخصي للحصول على تقييم؟"
+        }
+
     final_analysis = analyze_with_openai(
         image_str=None,
         image_format=None,
@@ -94,7 +120,6 @@ def build_final_analysis_response(session_data):
         final_analysis = shorten_analysis_text(final_analysis, timeframe="مدمج", currency=final_currency)
         print(f"📏 LENGTH CHECK: After shortening: {len(final_analysis)} chars")
 
-    final_instrument_label = format_instrument_label(final_currency)
     return {
         "success": True,
         "message": f"✅ تم التحليل الشامل لـ {final_instrument_label} بنجاح",
@@ -187,6 +212,12 @@ def analyze():
             return jsonify(error_response), 503
 
         session_data = load_analysis_session(telegram_user_id, reset=(action_type == 'first_analysis'))
+        set_openai_usage_context(
+            telegram_user_id=telegram_user_id,
+            endpoint_name='analyze',
+            flow_type='multi_frame_specialized',
+            flow_id=session_data.get('flow_id')
+        )
         user_analysis_text = data.get('user_analysis')
         timeframe = data.get('timeframe', 'M15')
 
@@ -271,6 +302,9 @@ def analyze():
                 print("🚨 ANALYZE ENDPOINT: ♻️ Returning stored combined analysis for retry")
                 response_data = build_final_analysis_response(session_data)
                 if response_data:
+                    if not session_data.get('final_analysis'):
+                        session_data['final_analysis'] = response_data['analysis']
+                        save_analysis_session(telegram_user_id, session_data)
                     return jsonify(response_data), 200
 
             if not image_str:
@@ -345,6 +379,9 @@ def analyze():
                     "success": False,
                     "message": "تعذر إنشاء التحليل الشامل"
                 }), 500
+
+            session_data['final_analysis'] = response_data['analysis']
+            save_analysis_session(telegram_user_id, session_data)
 
             # Final logging before sending to SendPulse
             print(f"🔍 FINAL RESPONSE TO SENDPULSE - {action_type.upper()}")
@@ -492,6 +529,13 @@ def analyze_single_image():
             }), 200
 
         image_url = data.get('image_url')
+        telegram_user_id = data.get('telegram_user_id')
+        set_openai_usage_context(
+            telegram_user_id=int(telegram_user_id) if telegram_user_id else None,
+            endpoint_name='analyze_single',
+            flow_type='single_image_analysis',
+            flow_id=uuid4().hex
+        )
 
         if not image_url:
             print("🚨 ANALYZE-SINGLE: ❌ Missing image_url")
@@ -641,6 +685,13 @@ def analyze_technical():
             }), 200
 
         image_url = data.get('image_url')
+        telegram_user_id = data.get('telegram_user_id')
+        set_openai_usage_context(
+            telegram_user_id=int(telegram_user_id) if telegram_user_id else None,
+            endpoint_name='analyze_technical',
+            flow_type='technical_analysis',
+            flow_id=uuid4().hex
+        )
 
         if not image_url:
             return jsonify({
@@ -766,6 +817,13 @@ def analyze_user_feedback():
             }), 200
 
         image_url = data.get('image_url')
+        telegram_user_id = data.get('telegram_user_id')
+        set_openai_usage_context(
+            telegram_user_id=int(telegram_user_id) if telegram_user_id else None,
+            endpoint_name='analyze_user_feedback',
+            flow_type='user_feedback',
+            flow_id=uuid4().hex
+        )
 
         if not image_url:
             return jsonify({

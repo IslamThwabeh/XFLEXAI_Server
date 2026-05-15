@@ -5,13 +5,106 @@ import os
 import re
 from PIL import Image
 from io import BytesIO
+from flask import g, has_request_context
 from config import Config
+from database.operations import create_openai_usage_event
 
 OPENAI_AVAILABLE = False
 client = None
 openai_error_message = ""
 openai_last_check = 0
 VISION_IMAGE_DETAIL = "high"
+OPENAI_PRICING_USD_PER_1M_TOKENS = {
+    "gpt-4o": {"input": 5.0, "output": 15.0},
+    "gpt-4o-mini": {"input": 0.15, "output": 0.60}
+}
+
+
+def get_openai_usage_context():
+    if not has_request_context():
+        return {}
+    return getattr(g, 'openai_usage_context', {}) or {}
+
+
+def estimate_openai_cost_usd(model_name, prompt_tokens=0, completion_tokens=0):
+    pricing = OPENAI_PRICING_USD_PER_1M_TOKENS.get(model_name)
+    if not pricing:
+        return 0.0
+
+    input_cost = (max(0, int(prompt_tokens or 0)) / 1_000_000) * pricing['input']
+    output_cost = (max(0, int(completion_tokens or 0)) / 1_000_000) * pricing['output']
+    return round(input_cost + output_cost, 6)
+
+
+def record_openai_usage_event(action_type, model_name, response=None, request_mode="text", image_detail=None,
+                              timeframe=None, currency_pair=None, success=True, error_message=None):
+    try:
+        usage = getattr(response, 'usage', None)
+        prompt_tokens = int(getattr(usage, 'prompt_tokens', 0) or 0)
+        completion_tokens = int(getattr(usage, 'completion_tokens', 0) or 0)
+        total_tokens = int(getattr(usage, 'total_tokens', 0) or 0)
+        context = get_openai_usage_context()
+
+        create_openai_usage_event({
+            'telegram_user_id': context.get('telegram_user_id'),
+            'endpoint_name': context.get('endpoint_name'),
+            'flow_type': context.get('flow_type'),
+            'flow_id': context.get('flow_id'),
+            'action_type': action_type,
+            'model_name': model_name,
+            'request_mode': request_mode,
+            'image_detail': image_detail,
+            'timeframe': timeframe,
+            'currency_pair': currency_pair,
+            'prompt_tokens': prompt_tokens,
+            'completion_tokens': completion_tokens,
+            'total_tokens': total_tokens,
+            'estimated_cost_usd': estimate_openai_cost_usd(model_name, prompt_tokens, completion_tokens),
+            'success': success,
+            'error_message': error_message
+        })
+    except Exception as logging_error:
+        print(f"ERROR: OpenAI usage logging failed: {logging_error}")
+
+
+def create_openai_chat_completion(*, action_type, model, messages, max_tokens, temperature,
+                                  timeout=None, request_mode="text", image_detail=None,
+                                  timeframe=None, currency_pair=None):
+    request_kwargs = {
+        'model': model,
+        'messages': messages,
+        'max_tokens': max_tokens,
+        'temperature': temperature
+    }
+    if timeout is not None:
+        request_kwargs['timeout'] = timeout
+
+    try:
+        response = client.chat.completions.create(**request_kwargs)
+        record_openai_usage_event(
+            action_type=action_type,
+            model_name=model,
+            response=response,
+            request_mode=request_mode,
+            image_detail=image_detail,
+            timeframe=timeframe,
+            currency_pair=currency_pair,
+            success=True
+        )
+        return response
+    except Exception as exc:
+        record_openai_usage_event(
+            action_type=action_type,
+            model_name=model,
+            response=None,
+            request_mode=request_mode,
+            image_detail=image_detail,
+            timeframe=timeframe,
+            currency_pair=currency_pair,
+            success=False,
+            error_message=str(exc)
+        )
+        raise
 
 
 def canonicalize_instrument_symbol(symbol):
@@ -127,7 +220,8 @@ def shorten_analysis_text(analysis_text, char_limit=1024, timeframe=None, curren
         {analysis_text}
         """
 
-        response = client.chat.completions.create(
+        response = create_openai_chat_completion(
+            action_type="shorten_analysis_text",
             model="gpt-4o",
             messages=[
                 {
@@ -139,8 +233,11 @@ def shorten_analysis_text(analysis_text, char_limit=1024, timeframe=None, curren
                     "content": shortening_prompt
                 }
             ],
-            max_tokens=800,  # Increased to allow for better processing
-            temperature=0.1
+            max_tokens=800,
+            temperature=0.1,
+            request_mode="text",
+            timeframe=timeframe,
+            currency_pair=currency
         )
 
         shortened = response.choices[0].message.content.strip()
@@ -453,7 +550,8 @@ def detect_investing_frame(image_str, image_format):
         Example: "investing,M15" or "stock_chart,D1" or "trading_app,H4" or "unknown,UNKNOWN"
         """
 
-        response = client.chat.completions.create(
+        response = create_openai_chat_completion(
+            action_type="detect_investing_frame",
             model="gpt-4o",
             messages=[
                 {
@@ -477,8 +575,10 @@ def detect_investing_frame(image_str, image_format):
                     ]
                 }
             ],
-            max_tokens=100,  # Increased to handle more complex detection
-            temperature=0.1
+            max_tokens=100,
+            temperature=0.1,
+            request_mode="vision",
+            image_detail=VISION_IMAGE_DETAIL
         )
 
         result = response.choices[0].message.content.strip()
@@ -556,7 +656,8 @@ def extract_investing_data(image_str, image_format):
         Return ONLY a JSON-like structure with the extracted data.
         """
 
-        response = client.chat.completions.create(
+        response = create_openai_chat_completion(
+            action_type="extract_investing_data",
             model="gpt-4o",
             messages=[
                 {
@@ -581,7 +682,9 @@ def extract_investing_data(image_str, image_format):
                 }
             ],
             max_tokens=300,
-            temperature=0.1
+            temperature=0.1,
+            request_mode="vision",
+            image_detail=VISION_IMAGE_DETAIL
         )
 
         extracted_data_text = response.choices[0].message.content.strip()
@@ -671,7 +774,8 @@ def detect_currency_from_image(image_str, image_format):
         Return ONLY the instrument symbol in standard format.
         """
 
-        response = client.chat.completions.create(
+        response = create_openai_chat_completion(
+            action_type="detect_currency",
             model="gpt-4o",
             messages=[
                 {
@@ -696,7 +800,9 @@ def detect_currency_from_image(image_str, image_format):
                 }
             ],
             max_tokens=150,
-            temperature=0.1
+            temperature=0.1,
+            request_mode="vision",
+            image_detail=VISION_IMAGE_DETAIL
         )
 
         detected_symbol = response.choices[0].message.content.strip().upper()
@@ -820,7 +926,8 @@ def detect_timeframe_from_image(image_str, image_format):
         Return ONLY the timeframe code in standard format or 'UNKNOWN'.
         """
 
-        response = client.chat.completions.create(
+        response = create_openai_chat_completion(
+            action_type="detect_timeframe",
             model="gpt-4o",
             messages=[
                 {
@@ -845,7 +952,9 @@ def detect_timeframe_from_image(image_str, image_format):
                 }
             ],
             max_tokens=100,
-            temperature=0.1
+            temperature=0.1,
+            request_mode="vision",
+            image_detail=VISION_IMAGE_DETAIL
         )
 
         detected_timeframe = response.choices[0].message.content.strip().upper()
@@ -998,7 +1107,8 @@ def analyze_simple_chart_fallback(image_str, image_format, timeframe, currency_p
         التزم بـ 800-1000 حرف.
         """
         
-        response = client.chat.completions.create(
+        response = create_openai_chat_completion(
+            action_type="simple_chart_fallback",
             model="gpt-4o",
             messages=[
                 {
@@ -1017,7 +1127,11 @@ def analyze_simple_chart_fallback(image_str, image_format, timeframe, currency_p
                 }
             ],
             max_tokens=600,
-            temperature=0.7
+            temperature=0.7,
+            request_mode="vision",
+            image_detail=VISION_IMAGE_DETAIL,
+            timeframe=timeframe,
+            currency_pair=currency_pair
         )
         
         analysis = response.choices[0].message.content.strip()
@@ -1259,7 +1373,8 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
 
         if image_str:
             print(f"🚨 OPENAI ANALYSIS: Analyzing image with {action_type}")
-            response = client.chat.completions.create(
+            response = create_openai_chat_completion(
+                action_type=action_type,
                 model="gpt-4o",
                 messages=[
                     {"role": "system", "content": f"أنت محلل فني محترف. التزم بعدم تجاوز {char_limit} حرف في ردك. لا تضف عدد الأحرف في النهاية."},
@@ -1270,11 +1385,16 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
                 ],
                 max_tokens=max_tokens,
                 temperature=0.7,
-                timeout=30
+                timeout=30,
+                request_mode="vision",
+                image_detail=VISION_IMAGE_DETAIL,
+                timeframe=timeframe,
+                currency_pair=currency_pair
             )
         else:
             print(f"🚨 OPENAI ANALYSIS: Analyzing text with {action_type}")
-            response = client.chat.completions.create(
+            response = create_openai_chat_completion(
+                action_type=action_type,
                 model="gpt-4o",
                 messages=[
                     {"role": "system", "content": f"أنت محلل فني محترف. التزم بعدم تجاوز {char_limit} حرف في ردك. لا تضف عدد الأحرف في النهاية."},
@@ -1282,7 +1402,10 @@ def analyze_with_openai(image_str, image_format, timeframe=None, previous_analys
                 ],
                 max_tokens=max_tokens,
                 temperature=0.7,
-                timeout=20
+                timeout=20,
+                request_mode="text",
+                timeframe=timeframe,
+                currency_pair=currency_pair
             )
 
         analysis = response.choices[0].message.content.strip()
@@ -1425,7 +1548,8 @@ def analyze_technical_chart(image_str, image_format, timeframe=None, currency_pa
         print(f"🔍 TECHNICAL PRE-REQUEST")
         print(f"🔍 Prompt length: {len(analysis_prompt)} characters")
 
-        response = client.chat.completions.create(
+        response = create_openai_chat_completion(
+            action_type="technical_analysis",
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": "أنت خبير تحليل فني. ركز فقط على التحليل الفني. التزم بعدم تجاوز 1024 حرف. لا تضف عدد الأحرف في النهاية."},
@@ -1436,7 +1560,11 @@ def analyze_technical_chart(image_str, image_format, timeframe=None, currency_pa
             ],
             max_tokens=max_tokens,
             temperature=0.7,
-            timeout=30
+            timeout=30,
+            request_mode="vision",
+            image_detail=VISION_IMAGE_DETAIL,
+            timeframe=timeframe,
+            currency_pair=currency_pair
         )
 
         analysis = response.choices[0].message.content.strip()
@@ -1517,7 +1645,8 @@ def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
         print(f"🔍 USER FEEDBACK PRE-REQUEST")
         print(f"🔍 Prompt length: {len(feedback_prompt)} characters")
 
-        response = client.chat.completions.create(
+        response = create_openai_chat_completion(
+            action_type="user_feedback",
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": "أنت مدرس تحليل فني محترف. قيم تحليل المستخدم المرسوم بموضوعية. التزم بعدم تجاوز 1024 حرف. لا تضف عدد الأحرف في النهاية."},
@@ -1528,7 +1657,10 @@ def analyze_user_drawn_feedback_simple(image_str, image_format, timeframe=None):
             ],
             max_tokens=max_tokens,
             temperature=0.7,
-            timeout=30
+            timeout=30,
+            request_mode="vision",
+            image_detail=VISION_IMAGE_DETAIL,
+            timeframe=timeframe
         )
 
         feedback = response.choices[0].message.content.strip()

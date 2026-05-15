@@ -12,7 +12,10 @@ from database.operations import (
     create_registration_key,
     get_registration_keys,
     get_users,
-    deactivate_registration_key
+    deactivate_registration_key,
+    get_openai_usage_summary,
+    get_openai_user_daily_usage,
+    get_openai_action_breakdown
 )
 from services.key_service import generate_unique_key
 from utils.key_helpers import normalize_registration_key
@@ -83,8 +86,15 @@ def admin_dashboard():
         return redirect(url_for('admin_bp.admin_login'))
 
     try:
+        usage_days = request.args.get('usage_days', default=7, type=int)
+        if usage_days not in [1, 7, 30]:
+            usage_days = 7
+
         raw_users = get_users() or []
         raw_keys = get_registration_keys() or []
+        usage_summary = get_openai_usage_summary(usage_days)
+        usage_rows = get_openai_user_daily_usage(usage_days)
+        usage_breakdown = get_openai_action_breakdown(usage_days)
 
         # Format users with enhanced information
         display_users = []
@@ -167,7 +177,13 @@ def admin_dashboard():
             'expired_users': len([u for u in display_users if u['status'] == 'Expired']),
             'total_keys': len(display_keys),
             'unused_keys': len([k for k in display_keys if not k['used']]),
-            'used_keys': len([k for k in display_keys if k['used']])
+            'used_keys': len([k for k in display_keys if k['used']]),
+            'today_ai_cost': usage_summary['today_cost'],
+            'today_ai_calls': usage_summary['today_calls'],
+            'today_ai_users': usage_summary['today_users'],
+            'period_ai_cost': usage_summary['period_cost'],
+            'period_ai_calls': usage_summary['period_calls'],
+            'period_ai_users': usage_summary['period_users']
         }
 
         return render_template('dashboard.html',
@@ -175,11 +191,38 @@ def admin_dashboard():
                              users=display_users,
                              keys=display_keys,
                              stats=stats,
+                             usage_days=usage_days,
+                             usage_rows=usage_rows,
+                             usage_breakdown=usage_breakdown,
                              session_expires=session.get('last_activity'))
 
     except Exception as e:
         print(f"ERROR: Dashboard error: {e}")
-        return render_template('dashboard.html', error='Error loading dashboard data')
+        fallback_stats = {
+            'total_users': 0,
+            'active_users': 0,
+            'expired_users': 0,
+            'total_keys': 0,
+            'unused_keys': 0,
+            'used_keys': 0,
+            'today_ai_cost': 0,
+            'today_ai_calls': 0,
+            'today_ai_users': 0,
+            'period_ai_cost': 0,
+            'period_ai_calls': 0,
+            'period_ai_users': 0
+        }
+        return render_template(
+            'dashboard.html',
+            error='Error loading dashboard data',
+            admin_username=session.get('admin_username'),
+            users=[],
+            keys=[],
+            stats=fallback_stats,
+            usage_days=7,
+            usage_rows=[],
+            usage_breakdown=[]
+        )
 
 @admin_bp.route('/admin/generate-key', methods=['POST'])
 def generate_key():

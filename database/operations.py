@@ -38,6 +38,15 @@ def init_database():
         cur.execute("""
             CREATE INDEX IF NOT EXISTS idx_analysis_sessions_updated_at ON analysis_sessions (updated_at);
         """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_openai_usage_events_created_at ON openai_usage_events (created_at DESC);
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_openai_usage_events_telegram_user_id ON openai_usage_events (telegram_user_id, created_at DESC);
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_openai_usage_events_flow_id ON openai_usage_events (flow_id);
+        """)
 
         # Seed basic key_types if not present
         cur.execute("""
@@ -182,6 +191,156 @@ def count_analysis_sessions():
     if not rows:
         return 0
     return int(rows[0].get('session_count', 0))
+
+def create_openai_usage_event(event_data):
+    payload = event_data or {}
+    execute_query(
+        """
+        INSERT INTO openai_usage_events (
+            telegram_user_id,
+            endpoint_name,
+            flow_type,
+            flow_id,
+            action_type,
+            model_name,
+            request_mode,
+            image_detail,
+            timeframe,
+            currency_pair,
+            prompt_tokens,
+            completion_tokens,
+            total_tokens,
+            estimated_cost_usd,
+            success,
+            error_message
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        (
+            payload.get('telegram_user_id'),
+            payload.get('endpoint_name'),
+            payload.get('flow_type'),
+            payload.get('flow_id'),
+            payload.get('action_type'),
+            payload.get('model_name'),
+            payload.get('request_mode', 'text'),
+            payload.get('image_detail'),
+            payload.get('timeframe'),
+            payload.get('currency_pair'),
+            int(payload.get('prompt_tokens') or 0),
+            int(payload.get('completion_tokens') or 0),
+            int(payload.get('total_tokens') or 0),
+            float(payload.get('estimated_cost_usd') or 0),
+            bool(payload.get('success', True)),
+            payload.get('error_message')
+        )
+    )
+
+def get_openai_usage_summary(days=7):
+    normalized_days = max(1, int(days or 7))
+    rows = execute_query(
+        """
+        SELECT
+            COALESCE(SUM(CASE WHEN created_at >= CURRENT_DATE THEN estimated_cost_usd ELSE 0 END), 0) AS today_cost,
+            COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE) AS today_calls,
+            COUNT(DISTINCT telegram_user_id) FILTER (
+                WHERE created_at >= CURRENT_DATE AND telegram_user_id IS NOT NULL
+            ) AS today_users,
+            COALESCE(SUM(CASE WHEN created_at >= NOW() - (%s::int * INTERVAL '1 day') THEN estimated_cost_usd ELSE 0 END), 0) AS period_cost,
+            COUNT(*) FILTER (WHERE created_at >= NOW() - (%s::int * INTERVAL '1 day')) AS period_calls,
+            COUNT(DISTINCT telegram_user_id) FILTER (
+                WHERE created_at >= NOW() - (%s::int * INTERVAL '1 day') AND telegram_user_id IS NOT NULL
+            ) AS period_users
+        FROM openai_usage_events
+        """,
+        (normalized_days, normalized_days, normalized_days),
+        fetch=True,
+        dict_cursor=True
+    )
+    summary = rows[0] if rows else {}
+    return {
+        'today_cost': float(summary.get('today_cost', 0) or 0),
+        'today_calls': int(summary.get('today_calls', 0) or 0),
+        'today_users': int(summary.get('today_users', 0) or 0),
+        'period_cost': float(summary.get('period_cost', 0) or 0),
+        'period_calls': int(summary.get('period_calls', 0) or 0),
+        'period_users': int(summary.get('period_users', 0) or 0)
+    }
+
+def get_openai_user_daily_usage(days=7, limit=100):
+    normalized_days = max(1, int(days or 7))
+    normalized_limit = max(1, int(limit or 100))
+    rows = execute_query(
+        """
+        SELECT
+            DATE(created_at) AS usage_day,
+            telegram_user_id,
+            COUNT(*) AS call_count,
+            COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
+            COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
+            COALESCE(SUM(total_tokens), 0) AS total_tokens,
+            COALESCE(SUM(estimated_cost_usd), 0) AS estimated_cost_usd,
+            MAX(created_at) AS last_request_at
+        FROM openai_usage_events
+        WHERE created_at >= NOW() - (%s::int * INTERVAL '1 day')
+          AND telegram_user_id IS NOT NULL
+        GROUP BY DATE(created_at), telegram_user_id
+        ORDER BY usage_day DESC, estimated_cost_usd DESC, call_count DESC
+        LIMIT %s
+        """,
+        (normalized_days, normalized_limit),
+        fetch=True,
+        dict_cursor=True
+    )
+
+    usage_rows = []
+    for row in rows or []:
+        usage_rows.append({
+            'usage_day': row.get('usage_day'),
+            'telegram_user_id': row.get('telegram_user_id'),
+            'call_count': int(row.get('call_count', 0) or 0),
+            'prompt_tokens': int(row.get('prompt_tokens', 0) or 0),
+            'completion_tokens': int(row.get('completion_tokens', 0) or 0),
+            'total_tokens': int(row.get('total_tokens', 0) or 0),
+            'estimated_cost_usd': float(row.get('estimated_cost_usd', 0) or 0),
+            'last_request_at': row.get('last_request_at')
+        })
+    return usage_rows
+
+def get_openai_action_breakdown(days=7, limit=20):
+    normalized_days = max(1, int(days or 7))
+    normalized_limit = max(1, int(limit or 20))
+    rows = execute_query(
+        """
+        SELECT
+            action_type,
+            model_name,
+            request_mode,
+            COUNT(*) AS call_count,
+            COALESCE(SUM(total_tokens), 0) AS total_tokens,
+            COALESCE(SUM(estimated_cost_usd), 0) AS estimated_cost_usd
+        FROM openai_usage_events
+        WHERE created_at >= NOW() - (%s::int * INTERVAL '1 day')
+        GROUP BY action_type, model_name, request_mode
+        ORDER BY estimated_cost_usd DESC, call_count DESC
+        LIMIT %s
+        """,
+        (normalized_days, normalized_limit),
+        fetch=True,
+        dict_cursor=True
+    )
+
+    breakdown_rows = []
+    for row in rows or []:
+        breakdown_rows.append({
+            'action_type': row.get('action_type'),
+            'model_name': row.get('model_name'),
+            'request_mode': row.get('request_mode'),
+            'call_count': int(row.get('call_count', 0) or 0),
+            'total_tokens': int(row.get('total_tokens', 0) or 0),
+            'estimated_cost_usd': float(row.get('estimated_cost_usd', 0) or 0)
+        })
+    return breakdown_rows
 
 # Admin operations
 def get_admin_by_username(username):
